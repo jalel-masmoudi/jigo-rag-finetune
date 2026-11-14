@@ -35,3 +35,11 @@ python train_embed.py --smoke
 ```
 
 The smoke flag is one optimizer step. It is not a sweep and not a test score.
+
+## Reranker
+
+`train_reranker.py` fine-tunes `BAAI/bge-reranker-base` with binary cross-entropy on the same hard negatives. At evaluation the first-stage retriever returns 20 passages and the cross-encoder reorders them. Recall@5 is measured on that order. There is no learning-rate sweep.
+
+```bash
+python train_reranker.py --smoke
+```
