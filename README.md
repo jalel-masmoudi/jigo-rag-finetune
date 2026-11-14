@@ -25,3 +25,13 @@ python eval.py --smoke --smoke-size 30 --retrieval-only
 ```
 
 The smoke query is the first sentence of the gold chunk, searched over the full chunk index. The JSON it writes has `"smoke": true`. Do not copy it into the results table.
+
+## Embedding fine-tune
+
+`train_embed.py` fine-tunes `bge-small` with MultipleNegativesRankingLoss. Each training row is the question, the gold chunk, and three hard negatives mined by the baseline retriever. Negatives from the gold document are skipped, because those windows overlap and often contain the answer. The grid is learning rate {2e-5, 5e-5} and {1, 2, 3} epochs. The highest validation Recall@5 wins. That checkpoint is scored on the reviewed test set once.
+
+```bash
+python train_embed.py --smoke
+```
+
+The smoke flag is one optimizer step. It is not a sweep and not a test score.

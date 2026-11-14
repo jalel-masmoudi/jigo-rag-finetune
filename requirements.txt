@@ -6,3 +6,5 @@ torch==2.15.0+cpu
 sentence-transformers==6.3.0
 faiss-cpu==1.16.0
 numpy==2.5.4
+datasets==5.2.0
+accelerate==1.15.0
