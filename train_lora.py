@@ -19,9 +19,10 @@ sweep for the generator.
 import argparse
 import json
 
+from jigo_rag.config import SEED
 from jigo_rag.generator import GENERATOR_MODEL
 from jigo_rag.jsonl import read_jsonl
-from jigo_rag.lora_data import build_examples, collate_for_training
+from jigo_rag.lora_data import MAX_TRAIN_LENGTH, build_examples, collate_for_training
 
 LORA_R = 16
 LORA_ALPHA = 32
@@ -148,7 +149,7 @@ def start_loss_log(seed, directory="results"):
         "lora_alpha": LORA_ALPHA,
         "target_modules": TARGET_MODULES,
         "model": GENERATOR_MODEL,
-        "max_length": 3072,
+        "max_length": MAX_TRAIN_LENGTH,
     }
     (directory / "lora_config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     csv_path = directory / "lora_loss.csv"

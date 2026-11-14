@@ -14,7 +14,8 @@ is ignored, so a validation or test chunk cannot become context.
 The test set is scored later; it is not a source of training context.
 
 The collate function hides prompt tokens with -100. The loss then
-falls only on the answer.
+falls only on the answer. A prompt that does not fit is shortened by
+cutting the passages. The question and the assistant header stay whole.
 """
 
 import random
@@ -101,20 +102,59 @@ def _as_ids(tokenizer, text):
     return list(encoded)
 
 
+_QUESTION_MARK = "\n\nQuestion: "
+
+
+def _fit_messages(tokenizer, messages, max_length):
+    """Cut passage text until the chat string fits.
+
+    The user message ends with the question. That suffix, and the
+    assistant header the chat template adds after it, are not cut.
+    """
+    if len(messages) < 2 or _QUESTION_MARK not in messages[1]["content"]:
+        return messages
+    context, question = messages[1]["content"].rsplit(_QUESTION_MARK, 1)
+
+    def assemble(context_text):
+        return [
+            messages[0],
+            {"role": "user", "content": f"{context_text}{_QUESTION_MARK}{question}"},
+            *messages[2:],
+        ]
+
+    def fits(context_text):
+        full = tokenizer.apply_chat_template(assemble(context_text), tokenize=False)
+        return len(_as_ids(tokenizer, full)) <= max_length
+
+    if fits(context):
+        return assemble(context)
+    # Keep a prefix of the passage block. The question sits after it.
+    lo, hi = 0, len(context)
+    best = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if fits(context[:mid]):
+            best = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return assemble(context[:best])
+
+
 def collate_for_training(batch_examples, tokenizer, max_length=MAX_TRAIN_LENGTH):
     """Tokenize a batch and mask every prompt token.
 
     The cap is 3072 Qwen tokens. Five retrieved passages are often
-    longer than 1024, which used to cut off the answer and then mask
-    the whole row. The prompt is shortened so at least one answer
-    token remains. Padding positions are masked too.
+    longer than 1024, which used to cut off the question and then mask
+    the whole row. Passages are shortened instead, so the question and
+    the assistant header stay in the window. Padding positions are masked too.
     """
     import torch
 
     rows = []
     pad_id = getattr(tokenizer, "pad_token_id", None) or 0
     for example in batch_examples:
-        messages = example["messages"]
+        messages = _fit_messages(tokenizer, example["messages"], max_length)
         prompt = tokenizer.apply_chat_template(
             messages[:-1], tokenize=False, add_generation_prompt=True
         )
@@ -129,9 +169,10 @@ def collate_for_training(batch_examples, tokenizer, max_length=MAX_TRAIN_LENGTH)
             prompt_ids = full_ids[:overlap]
         if not answer_ids:
             answer_ids = full_ids[-1:]
-        if len(answer_ids) >= max_length:
-            answer_ids = answer_ids[-(max_length - 1) :]
-        prompt_ids = prompt_ids[: max_length - len(answer_ids)]
+        # The prompt is already the fitted question and header. If the
+        # answer is what overflows, drop answer tokens, not the question.
+        if len(prompt_ids) < max_length:
+            answer_ids = answer_ids[: max_length - len(prompt_ids)] or answer_ids[:1]
         rows.append((prompt_ids + answer_ids, len(prompt_ids)))
     width = max(len(ids) for ids, _prompt_len in rows)
     input_ids = []

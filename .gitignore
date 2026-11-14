@@ -57,9 +57,11 @@ data/test_dropped.jsonl
 data/qa_errors.jsonl
 data/stats.json
 
-# Trained weights, indexes, and evaluation output
+# Trained weights and indexes. JSON summaries and the small LoRA loss log are kept.
 models/
-results/
+results/*
+!results/*.json
+!results/lora_loss.csv
 *.faiss
 wandb/
 mlruns/

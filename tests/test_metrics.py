@@ -259,6 +259,35 @@ def test_not_found_is_zero_end_to_end_and_separate_if_retrieval_missed():
     assert not_found_score("Not found.", "Book travel in Concur.", ["Book travel in Concur before the trip."]) == 0.0
 
 
+def test_lora_summary_keeps_the_retrieval_conditioned_score():
+    from eval import run
+
+    class Retriever:
+        chunks = [None]
+
+        def search(self, query, k=10):
+            return [{"chunk_id": "doc#0", "text": "The office is closed.", "doc_id": "doc"}]
+
+    class Generator:
+        def answer(self, question, passages, max_new_tokens=128):
+            return {"answer": "not found", "prompt_tokens": 1, "completion_tokens": 1}
+
+    summary = run(
+        [{"question": "Where?", "answer": "In Concur.", "gold_chunk_id": "doc#0"}],
+        Retriever(),
+        Generator(),
+        lambda question, passages, reference, prediction: 1.0,
+        smoke=False,
+        n_resamples=10,
+        seed=1,
+        lora_generator=Generator(),
+    )
+    assert summary["lora"]["judge"]["mean"] == 0.0
+    conditioned = summary["lora"]["lora_retrieval_conditioned_judge"]
+    assert conditioned["mean"] == 1.0
+    assert "Not-found" in conditioned["label"]
+
+
 def test_latency_does_not_include_the_judge():
     import time
 

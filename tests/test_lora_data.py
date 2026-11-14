@@ -1,9 +1,7 @@
 """Not-found contexts and the collate the training loop actually calls."""
 
-import torch
-
 from jigo_rag.generator import NOT_FOUND
-from jigo_rag.lora_data import build_examples, collate_for_training, contexts_for_row
+from jigo_rag.lora_data import build_examples, collate_for_training, contexts_for_row, with_answer
 
 
 def _row():
@@ -47,18 +45,38 @@ def test_not_found_context_is_train_only_and_excludes_the_gold_chunk():
 
 
 class _Tokenizer:
-    """Splits on spaces. Enough to see which tokens are masked."""
+    """Splits on spaces and can turn ids back into those words."""
 
     pad_token_id = 0
 
+    def __init__(self):
+        self.ids = {}
+        self.words = {}
+
+    def _id(self, token):
+        if token not in self.ids:
+            value = len(self.ids) + 1
+            self.ids[token] = value
+            self.words[value] = token
+        return self.ids[token]
+
     def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
-        text = " ".join(message["content"] for message in messages)
+        parts = []
+        for message in messages:
+            # The assistant turn starts with the same header the generation
+            # prompt adds, so the prompt is a prefix of the full string.
+            if message["role"] == "assistant":
+                parts.append("ASSIST")
+            parts.append(message["content"])
         if add_generation_prompt:
-            text += " ASSIST"
-        return text
+            parts.append("ASSIST")
+        return " ".join(parts)
 
     def __call__(self, text, add_special_tokens=False, **kwargs):
-        return {"input_ids": [abs(hash(token)) % 1000 + 1 for token in text.split()]}
+        return {"input_ids": [self._id(token) for token in text.split() if token]}
+
+    def decode(self, ids):
+        return " ".join(self.words[token] for token in ids if token in self.words)
 
 
 def test_gold_passage_position_depends_on_the_seed():
@@ -91,38 +109,54 @@ def test_loss_log_and_seed(tmp_path):
     assert config["seed"] == 7 and config["r"] == 16 and config["lora_alpha"] == 32
 
 
-def test_real_qwen_tokenizer_collates_long_passages():
+def test_collate_clips_passages_and_keeps_the_question():
+    passage = " ".join(f"passage{index}" for index in range(80))
+    example = {"messages": with_answer("UNIQUE_QUESTION", [passage], "SHORT_ANSWER")}
+    tokenizer = _Tokenizer()
+    batch = collate_for_training([example], tokenizer, max_length=40)
+    ids = [token for token in batch["input_ids"][0].tolist() if token != 0]
+    text = tokenizer.decode(ids)
+    assert len(ids) <= 40
+    assert "UNIQUE_QUESTION" in text.split()
+    assert "ASSIST" in text.split()
+    assert "SHORT_ANSWER" in text.split()
+    assert text.index("UNIQUE_QUESTION") < text.index("ASSIST") < text.index("SHORT_ANSWER")
+    assert "passage79" not in text.split()
+    question_id = tokenizer.ids["UNIQUE_QUESTION"]
+    labels = batch["labels"][0].tolist()
+    assert labels[ids.index(question_id)] == -100
+
+
+def test_real_qwen_tokenizer_collates_committed_top5_examples():
+    import json
     from pathlib import Path
 
     from transformers import AutoTokenizer
 
-    from jigo_rag.jsonl import read_jsonl
-    from jigo_rag.lora_data import collate_for_training, with_answer
-
-    texts = []
-    for split in ("train", "val", "test"):
-        chunk_path = Path("data/chunks") / f"{split}.jsonl"
-        if chunk_path.exists():
-            for row in read_jsonl(chunk_path):
-                if row.get("n_tokens", 0) >= 400:
-                    texts.append(row["text"])
-                if len(texts) >= 5:
-                    break
-        if len(texts) >= 5:
-            break
-    if len(texts) < 5:
-        for split in ("train", "val", "test"):
-            for row in read_jsonl(Path("data/sample") / f"{split}.jsonl"):
-                texts.append(row["chunk_text"])
-                if len(texts) >= 5:
-                    break
-    while len(texts) < 5:
-        texts.append(texts[-1])
-    example = {"messages": with_answer("Where is travel booked?", texts[:5], "In Concur.")}
+    rows = [
+        json.loads(line)
+        for line in Path("tests/fixtures/lora_top5.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(rows) == 5
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
-    batch = collate_for_training([example], tokenizer)
+    examples = [
+        {"messages": with_answer(row["question"], row["passages"], row["answer"])}
+        for row in rows
+    ]
+    batch = collate_for_training(examples, tokenizer)
     assert int(batch["input_ids"].shape[-1]) <= 3072
-    assert any(token != -100 for token in batch["labels"][0].tolist())
+    # A tight cap has to drop passage text. The question and the
+    # assistant header still have to be in the row.
+    tight = collate_for_training([examples[0]], tokenizer, max_length=512)
+    text = tokenizer.decode(tight["input_ids"][0].tolist())
+    assert rows[0]["question"] in text
+    header = "<|im_start|>assistant"
+    assert header in text
+    assert text.index(rows[0]["question"]) < text.index(header)
+    assert any(token != -100 for token in tight["labels"][0].tolist())
+    # The last passage is past the cap, so it is the part that was cut.
+    assert rows[0]["passages"][-1][-80:] not in text
 
 
 def test_collate_masks_the_prompt_and_keeps_the_answer():
@@ -140,3 +174,99 @@ def test_collate_masks_the_prompt_and_keeps_the_answer():
     labels = batch["labels"][0].tolist()
     assert labels[:prompt_length] == [-100] * prompt_length
     assert any(token != -100 for token in labels[prompt_length:])
+
+
+def test_train_stops_when_cuda_is_missing(monkeypatch):
+    import torch
+
+    from train_lora import train
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    try:
+        train()
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("train() returned without CUDA")
+    assert "CUDA" in message
+
+
+def test_train_records_the_seed_and_the_step_loss(tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+
+    import peft
+    import torch
+    import transformers
+
+    import train_lora
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    row = {
+        "question": "Where is travel booked?",
+        "answer": "In Concur.",
+        "chunk_text": "Book travel in Concur.",
+        "doc_id": "handbook/travel.md",
+        "gold_chunk_id": "handbook/travel.md#0",
+    }
+    corpus = [
+        {"chunk_id": "handbook/travel.md#0", "doc_id": "handbook/travel.md", "text": row["chunk_text"], "split": "train"},
+        {"chunk_id": "handbook/leave.md#0", "doc_id": "handbook/leave.md", "text": "Leave is separate.", "split": "train"},
+    ]
+    monkeypatch.setattr(train_lora, "load_training_rows", lambda: ([row], corpus))
+    monkeypatch.setattr(train_lora, "_search_for", lambda rows, chunks: (chunks, lambda question, k: chunks))
+    monkeypatch.setattr(train_lora, "four_bit_config", lambda: object())
+
+    class Tok:
+        pad_token = "<pad>"
+        eos_token = "<eos>"
+
+        def save_pretrained(self, path):
+            Path(path).mkdir(parents=True, exist_ok=True)
+
+    class Loss:
+        def item(self):
+            return 0.5
+
+        def backward(self):
+            return None
+
+    class Model:
+        device = "cpu"
+
+        def parameters(self):
+            yield torch.nn.Parameter(torch.zeros(1))
+
+        def train(self):
+            return None
+
+        def print_trainable_parameters(self):
+            return None
+
+        def __call__(self, **batch):
+            return type("Out", (), {"loss": Loss()})()
+
+        def save_pretrained(self, path):
+            Path(path).mkdir(parents=True, exist_ok=True)
+
+    class OneBatch:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        def __iter__(self):
+            yield {"input_ids": torch.zeros(1, 2, dtype=torch.long)}
+
+    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", lambda *args, **kwargs: Tok())
+    monkeypatch.setattr(transformers.AutoModelForCausalLM, "from_pretrained", lambda *args, **kwargs: Model())
+    monkeypatch.setattr(peft, "prepare_model_for_kbit_training", lambda model: model)
+    monkeypatch.setattr(peft, "get_peft_model", lambda model, config: model)
+    monkeypatch.setattr(torch.utils.data, "DataLoader", OneBatch)
+    train_lora.train()
+    csv_text = (tmp_path / "results" / "lora_loss.csv").read_text(encoding="utf-8")
+    assert csv_text.startswith("step,loss,seed\n")
+    assert "1,0.500000,42" in csv_text
+    config = json.loads((tmp_path / "results" / "lora_config.json").read_text(encoding="utf-8"))
+    assert config["seed"] == 42
+    assert config["r"] == 16
+    assert config["max_length"] == 3072

@@ -226,6 +226,19 @@ def run(rows, retriever, generator, judge, smoke, n_resamples, seed, lora_genera
         skipped = sum(1 for row in per_question if row.get("lora_judge_skipped"))
         if skipped:
             summary["lora"]["judge_skipped"] = skipped
+        conditioned = [
+            row["lora_retrieval_conditioned_judge"]
+            for row in per_question
+            if "lora_retrieval_conditioned_judge" in row
+        ]
+        if conditioned:
+            summary["lora"]["lora_retrieval_conditioned_judge"] = bootstrap_mean_ci(
+                conditioned, n_resamples=n_resamples, seed=seed
+            )
+            summary["lora"]["lora_retrieval_conditioned_judge"]["label"] = (
+                "Not-found replies only. 1 when the retrieved passages do not "
+                "contain the reference, else 0. The judge mean scores not-found as 0."
+            )
     summary["seed"] = seed
     summary["smoke"] = smoke
     summary["n"] = len(rows)
