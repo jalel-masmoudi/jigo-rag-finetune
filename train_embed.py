@@ -4,7 +4,7 @@ The grid is the one in the project spec: learning rate 2e-5 or 5e-5,
 and 1, 2, or 3 epochs. Each run starts from the public bge checkpoint,
 not from the previous run. The winner is the highest Recall@5 on the
 validation questions. That one model is then scored on the reviewed
-test set, once.
+test set, once, and saved to models/embed.
 
 Hard negatives are mined by eval.py's retriever (the baseline), three
 per question, excluding the gold chunk and the rest of its document.
@@ -221,6 +221,9 @@ def main():
 
     # Score the selected checkpoint on the reviewed test set once.
     chosen = SentenceTransformer(winner["dir"])
+    # The grid directories stay so a run can be inspected. models/embed
+    # is the checkpoint that was selected.
+    chosen.save("models/embed")
     new_recall, new_mrr = per_query_scores(chosen, test_rows, corpus)
     base_model = SentenceTransformer(EMBED_MODEL)
     base_recall, base_mrr = per_query_scores(base_model, test_rows, corpus)
