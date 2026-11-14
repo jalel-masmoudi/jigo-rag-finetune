@@ -366,13 +366,16 @@ def run_suite(args):
     lora_generator = QwenGenerator(adapter_path=str(lora)) if lora else None
     generator = None if args.retrieval_only else QwenGenerator()
 
+    # --limit covers the table and every row, including a retrieval-only suite.
+    smoke = bool(args.smoke) or suite_is_smoke(args.limit)
+
     def one(retriever, generator_model, lora_model=None, reranker=None):
         return run(
             rows,
             retriever,
             generator_model,
             judge,
-            smoke=False,
+            smoke=smoke,
             n_resamples=args.bootstrap,
             seed=args.seed,
             lora_generator=lora_model,
@@ -380,7 +383,7 @@ def run_suite(args):
         )
 
     # A limited run is not the full test set, so it is marked as a smoke file.
-    table = {"smoke": suite_is_smoke(args.limit), "seed": args.seed, "rows": {}}
+    table = {"smoke": smoke, "seed": args.seed, "rows": {}}
     if args.limit:
         table["limit"] = args.limit
     table["rows"]["baseline"] = one(baseline, generator)
@@ -395,6 +398,7 @@ def run_suite(args):
     if "lora_generator" in names:
         compared = one(baseline, generator, lora_model=lora_generator)
         table["rows"]["lora_generator"] = compared["lora"]
+        table["rows"]["lora_generator"]["smoke"] = smoke
         table["rows"]["lora_generator"]["adapter"] = str(lora)
         table["rows"]["lora_generator"]["config"] = read_adapter_config(lora)
         table["rows"]["lora_generator"]["base_model"] = GENERATOR_MODEL
@@ -472,7 +476,7 @@ def main():
         retriever,
         generator,
         judge,
-        smoke=args.smoke,
+        smoke=bool(args.smoke) or suite_is_smoke(args.limit),
         n_resamples=args.bootstrap,
         seed=args.seed,
         lora_generator=lora_generator,

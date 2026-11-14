@@ -1,0 +1,47 @@
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon  2.157MB
+Step 1/8 : FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+ ---> 5e2bdb1b0d54
+Step 2/8 : WORKDIR /app
+ ---> Using cache
+ ---> be6592512277
+Step 3/8 : COPY requirements-cpu.txt requirements.txt ./
+ ---> Using cache
+ ---> 7c4f23d0cdf5
+Step 4/8 : RUN pip install --no-cache-dir -r requirements-cpu.txt  && pip install --no-cache-dir -r requirements.txt
+ ---> Using cache
+ ---> ea7774f1fcf7
+Step 5/8 : COPY . .
+ ---> 29ae82ee86de
+Step 6/8 : ENV PORT=8000
+ ---> Running in 16e6f20787d8
+ ---> Removed intermediate container 16e6f20787d8
+ ---> efe548e69266
+Step 7/8 : EXPOSE 8000
+ ---> Running in 849ee1044dc9
+ ---> Removed intermediate container 849ee1044dc9
+ ---> 2747081f38fa
+Step 8/8 : CMD ["sh", "-c", "python -m uvicorn serve.app:app --host 0.0.0.0 --port ${PORT}"]
+ ---> Running in c70a779dc09f
+ ---> Removed intermediate container c70a779dc09f
+ ---> 676077a2583c
+Successfully built 676077a2583c
+Successfully tagged jigo-rag-finetune:latest
+f194f487971bfe44a6855263d9b778008e583c3008220fe80648e20a26693b2f
+GET /health
+HTTP/1.1 200 OK
+date: Sat, 14 Nov 2026 13:54:08 GMT
+server: uvicorn
+content-length: 11
+content-type: application/json
+
+{"ok":true}
+POST /query
+HTTP 200
+{"answer":"The TTS Handbook establishes standard operating procedures (SOPs) for TTS and its offices","sources":[{"chunk_id":"gsa-handbook/pages/about-us/centers-of-excellence/about/handbook.md#0","doc_id":"gsa-handbook/pages/about-us/centers-of-excellence/about/handbook.md","score":0.7982636094093323},{"chunk_id":"gsa-handbook/pages/about.md#0","doc_id":"gsa-handbook/pages/about.md","score":0.778214693069458},{"chunk_id":"gsa-handbook/pages/about-us/centers-of-excellence/operations/welcome.md#0","doc_id":"gsa-handbook/pages/about-us/centers-of-excellence/operations/welcome.md","score":0.7510223388671875},{"chunk_id":"gsa-handbook/pages/updating-the-handbook/updating-the-handbook.md#0","doc_id":"gsa-handbook/pages/updating-the-handbook/updating-the-handbook.md","score":0.7438281774520874},{"chunk_id":"gsa-handbook/pages/general-information-and-resources/glossary.md#8","doc_id":"gsa-handbook/pages/general-information-and-resources/glossary.md","score":0.7212578058242798}],"latency_ms":8.767486999204266}
+POST /query blank
+HTTP 422
+{"detail":[{"type":"value_error","loc":["body","question"],"msg":"Value error, question is empty","input":"   ","ctx":{"error":{}}}]}

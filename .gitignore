@@ -62,6 +62,7 @@ models/
 results/*
 !results/*.json
 !results/lora_loss.csv
+!results/smoke_docker.txt
 *.faiss
 wandb/
 mlruns/

@@ -72,7 +72,7 @@ pip install -r requirements.txt bitsandbytes
 python run_gpu.py
 ```
 
-`run_gpu.py` trains the embedding model, then the reranker, then the QLoRA generator. If one of those steps fails, it still runs `python eval.py --suite` so the rows for the steps that finished are written, and then it exits with the list of failures. `--suite` writes `results/table.json`. A run that passes `--limit` is marked `"smoke": true` and is not a full test-set result. `notebooks/free_gpu.ipynb` is the same command. Install `bitsandbytes` there. Model-card templates are in `model_cards/`. Their metric cells are empty on purpose.
+`run_gpu.py` trains the embedding model, then the reranker, then the QLoRA generator. If one of those steps fails, it still runs `python eval.py --suite` so the rows for the steps that finished are written, and then it exits with the list of failures. `--suite` writes `results/table.json`. Any run that passes `--limit`, including `--retrieval-only` and each row inside the suite file, is marked `"smoke": true` and is not a full test-set result. `notebooks/free_gpu.ipynb` is the same command. Install `bitsandbytes` there. Model-card templates are in `model_cards/`. Their metric cells are empty on purpose.
 
 ## Service
 

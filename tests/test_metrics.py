@@ -48,6 +48,85 @@ def test_suite_limit_is_marked_smoke():
     assert suite_is_smoke(0) is False
 
 
+def test_limit_marks_retrieval_only_and_every_suite_row(tmp_path, monkeypatch):
+    import json
+    import sys
+    from pathlib import Path
+
+    import sentence_transformers
+
+    import eval as ev
+
+    chunks = [
+        {
+            "chunk_id": "a#0",
+            "doc_id": "a",
+            "text": "Book travel in Concur before the trip.",
+            "split": "test",
+        }
+    ]
+    reviewed = [
+        {"question": "Where?", "answer": "In Concur.", "gold_chunk_id": "a#0"},
+        {"question": "When?", "answer": "Before the trip.", "gold_chunk_id": "a#0"},
+    ]
+    monkeypatch.setattr(ev, "load_corpus", lambda: chunks)
+    monkeypatch.setattr(ev, "load_reviewed_test", lambda: reviewed)
+    monkeypatch.setattr(ev, "_present", lambda path: Path("models/embed"))
+
+    class Retriever:
+        def __init__(self, model_name=None):
+            self.chunks = []
+
+        def build(self, found):
+            self.chunks = list(found)
+            return self
+
+        def search(self, query, k=10):
+            return [{"chunk_id": "a#0", "text": chunks[0]["text"], "doc_id": "a", "score": 0.5}]
+
+    class Generator:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        def answer(self, question, passages, max_new_tokens=128):
+            return {"answer": "In Concur.", "prompt_tokens": 2, "completion_tokens": 1}
+
+    class Cross:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        def predict(self, pairs, show_progress_bar=False):
+            return [0.2 for _pair in pairs]
+
+    monkeypatch.setattr(ev, "FaissRetriever", Retriever)
+    monkeypatch.setattr(ev, "QwenGenerator", Generator)
+    monkeypatch.setattr(sentence_transformers, "CrossEncoder", Cross)
+
+    retrieval_out = tmp_path / "retrieval.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["eval.py", "--retrieval-only", "--limit", "1", "--bootstrap", "5", "--output", str(retrieval_out)],
+    )
+    ev.main()
+    retrieval = json.loads(retrieval_out.read_text(encoding="utf-8"))
+    assert retrieval["smoke"] is True
+    assert retrieval["n"] == 1
+
+    suite_out = tmp_path / "table.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["eval.py", "--suite", "--retrieval-only", "--limit", "1", "--bootstrap", "5", "--output", str(suite_out)],
+    )
+    ev.main()
+    table = json.loads(suite_out.read_text(encoding="utf-8"))
+    assert table["smoke"] is True
+    for name, row in table["rows"].items():
+        assert row is not None, name
+        assert row["smoke"] is True, name
+
+
 def test_suite_plan_covers_the_full_pipeline_only_when_every_weight_exists():
     from eval import planned_rows
 
