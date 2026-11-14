@@ -78,12 +78,13 @@ def test_generator_prompt_requires_not_found_and_numbers_passages():
     assert "Where is travel booked?" in messages[1]["content"]
 
 
-def test_unparseable_judge_replies_are_retried_then_raised():
+def test_unparseable_judge_replies_are_not_retried():
     calls = {"n": 0}
 
     def bad():
         calls["n"] += 1
-        raise ValueError("not json")
+        # The digits are text in the reply, not an HTTP status.
+        raise ValueError("not json, server said 500")
 
     try:
         judge_with_retries(bad, attempts=3)
@@ -91,7 +92,41 @@ def test_unparseable_judge_replies_are_retried_then_raised():
         pass
     else:
         raise AssertionError("a bad judge reply was accepted")
-    assert calls["n"] == 3
+    assert calls["n"] == 1
+
+
+def test_permission_errors_are_not_retried():
+    calls = {"n": 0}
+
+    def denied():
+        calls["n"] += 1
+        raise PermissionError("denied")
+
+    try:
+        judge_with_retries(denied, attempts=3)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("a permission error was retried")
+    assert calls["n"] == 1
+
+
+def test_http_server_errors_are_retried():
+    calls = {"n": 0}
+
+    def down():
+        calls["n"] += 1
+        error = OSError("unavailable")
+        error.code = 503
+        raise error
+
+    try:
+        judge_with_retries(down, attempts=2)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("an HTTP 503 was accepted")
+    assert calls["n"] == 2
 
 
 def test_network_errors_are_retried():

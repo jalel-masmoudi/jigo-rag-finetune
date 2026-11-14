@@ -210,6 +210,34 @@ def run(rows, retriever, generator, judge, smoke, n_resamples, seed):
     return summary
 
 
+def _make_judge():
+    """The Gemini judge, or None when the key is missing.
+
+    One function, so main does not define `judge` a second time.
+    """
+    from generate_qa import load_dotenv
+
+    load_dotenv()
+    if not judge_available():
+        print("GEMINI_API_KEY is not set. The judge score will be null.")
+        return None
+    from google import genai
+
+    template = JUDGE_PROMPT.read_text(encoding="utf-8")
+    client = genai.Client(api_key=__import__("os").environ["GEMINI_API_KEY"])
+    model = default_model()
+
+    def judge(question, passages, reference, prediction, _client=client, _model=model, _template=template):
+        context = format_passages(passages)
+
+        def call():
+            return judge_one(_client, _model, _template, question, context, reference, prediction)
+
+        return judge_with_retries(call)
+
+    return judge
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--retrieval-only", action="store_true")
@@ -238,24 +266,7 @@ def main():
     from generate_qa import load_dotenv
 
     load_dotenv()
-    judge = None
-    if generator is not None and judge_available():
-        from google import genai
-
-        template = JUDGE_PROMPT.read_text(encoding="utf-8")
-        client = genai.Client(api_key=__import__("os").environ["GEMINI_API_KEY"])
-        model = default_model()
-
-        def judge(question, passages, reference, prediction, _client=client, _model=model, _template=template):
-            context = format_passages(passages)
-
-            def call():
-                return judge_one(_client, _model, _template, question, context, reference, prediction)
-
-            return judge_with_retries(call)
-
-    elif generator is not None:
-        print("GEMINI_API_KEY is not set. The judge score will be null.")
+    judge = _make_judge() if generator is not None else None
 
     summary = run(rows, retriever, generator, judge, smoke=args.smoke, n_resamples=args.bootstrap, seed=args.seed)
     if args.smoke:

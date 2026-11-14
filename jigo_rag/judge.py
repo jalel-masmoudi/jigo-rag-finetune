@@ -7,9 +7,10 @@ rejected. The model is the same free-tier Gemini default as the
 question generator. If the key is missing the judge is skipped and the
 score is left empty. A missing key is not a zero.
 
-Saying "not found" is correct when none of the retrieved passages
-support the reference answer, and wrong when one of them does. That
-case is decided here so a retrieval miss cannot be marked wrong.
+Every question in the test set is answerable, so a reply of "not found"
+scores 0 on the end-to-end judge. not_found_score is a separate value:
+1 when the retrieved passages do not contain the reference, and 0 when
+they do. That value is not the judge score.
 """
 
 import json
@@ -87,15 +88,51 @@ def not_found_score(prediction, reference, passages):
     return 0.0 if supported else 1.0
 
 
+# httpx and requests raise their own connection and timeout types. They are
+# not the builtin ConnectionError, and the message text is not a status code.
+_NETWORK_TYPES = {
+    "ConnectError",
+    "ConnectTimeout",
+    "ReadTimeout",
+    "WriteTimeout",
+    "PoolTimeout",
+    "NetworkError",
+    "RemoteProtocolError",
+    "Timeout",
+    "ProxyError",
+}
+
+
+def _status_code(exc):
+    for attribute in ("status_code", "code"):
+        value = getattr(exc, attribute, None)
+        if isinstance(value, int):
+            return value
+    response = getattr(exc, "response", None)
+    value = getattr(response, "status_code", None)
+    if isinstance(value, int):
+        return value
+    return None
+
+
 def _retryable(exc):
-    if isinstance(exc, (ValueError, json.JSONDecodeError, OSError, TimeoutError, ConnectionError)):
+    """Network failures and HTTP 5xx only.
+
+    PermissionError is an OSError, and a reply that merely contains the
+    digits 500 is not an HTTP error. Neither is retried.
+    """
+    if isinstance(exc, PermissionError):
+        return False
+    if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
-    message = str(exc).lower()
-    return any(token in message for token in ("timeout", "timed out", "unavailable", "connection", "429", "500", "502", "503"))
+    if any(cls.__name__ in _NETWORK_TYPES for cls in type(exc).__mro__):
+        return True
+    status = _status_code(exc)
+    return status is not None and 500 <= status <= 599
 
 
 def judge_with_retries(call, attempts=3):
-    """Retry parse failures and network errors. Raise the last one."""
+    """Retry network and HTTP 5xx errors. Raise the last one."""
     last_error = None
     for attempt in range(attempts):
         try:
