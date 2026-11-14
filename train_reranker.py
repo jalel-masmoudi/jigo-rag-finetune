@@ -22,7 +22,7 @@ from pathlib import Path
 
 from jigo_rag.config import SEED
 from jigo_rag.jsonl import read_jsonl
-from jigo_rag.metrics import bootstrap_mean_ci, recall_at_k
+from jigo_rag.metrics import bootstrap_mean_ci, mrr_at_k, recall_at_k
 from jigo_rag.negatives import mine_hard_negatives
 from jigo_rag.rerank import RERANK_DEPTH, RERANKER_MODEL, labeled_pairs, rerank
 from jigo_rag.retriever import FaissRetriever
@@ -37,13 +37,17 @@ def load_corpus():
     return corpus
 
 
-def recall_after_rerank(encoder, retriever, questions):
-    scores = []
+def scores_after_rerank(encoder, retriever, questions):
+    """Recall@5 and MRR@10 after reordering each question's top 20."""
+    recall_scores = []
+    mrr_scores = []
     for row in questions:
         hits = retriever.search(row["question"], k=RERANK_DEPTH)
         ordered = rerank(encoder, row["question"], hits)
-        scores.append(recall_at_k([hit["chunk_id"] for hit in ordered], row["gold_chunk_id"], 5))
-    return scores
+        ranked = [hit["chunk_id"] for hit in ordered]
+        recall_scores.append(recall_at_k(ranked, row["gold_chunk_id"], 5))
+        mrr_scores.append(mrr_at_k(ranked, row["gold_chunk_id"], 10))
+    return recall_scores, mrr_scores
 
 
 def train_one(pair_columns, output_dir, max_steps=None, batch_size=8):
@@ -119,28 +123,50 @@ def main():
         print(json.dumps(report, indent=2))
         return
 
-    train_rows = read_jsonl("data/train.jsonl")
-    test_rows = read_jsonl("data/test_reviewed.jsonl")
-    if not train_rows or not test_rows:
+    train_path = Path("data/train.jsonl")
+    reviewed = Path("data/test_reviewed.jsonl")
+    if not train_path.exists() or not reviewed.exists():
         raise SystemExit(
             "Need data/train.jsonl and data/test_reviewed.jsonl. "
             "Generate questions, then review the test set."
         )
+    train_rows = read_jsonl(train_path)
+    test_rows = read_jsonl(reviewed)
     corpus = load_corpus()
-    retriever = FaissRetriever().build(corpus)
+    train_chunks = [chunk for chunk in corpus if chunk.get("split") == "train"]
+    # Negatives are training chunks. The test set is only for scoring.
+    miner = FaissRetriever().build(train_chunks)
 
     def search(question, k):
-        return retriever.search(question, k=k)
+        return miner.search(question, k=k)
 
-    mined = mine_hard_negatives(train_rows, search, corpus, seed=SEED)
+    mined = mine_hard_negatives(train_rows, search, train_chunks, seed=SEED)
     model = train_one(labeled_pairs(mined), "models/reranker")
-    scores = recall_after_rerank(model, retriever, test_rows)
+    baseline = FaissRetriever().build(corpus)
+    base_recall, base_mrr = scores_after_rerank(model, baseline, test_rows)
     report = {
         "smoke": False,
+        "seed": SEED,
         "model": RERANKER_MODEL,
         "rerank_depth": RERANK_DEPTH,
-        "test_recall@5": bootstrap_mean_ci(scores, seed=SEED),
+        "baseline_retriever": {
+            "test_recall@5": bootstrap_mean_ci(base_recall, seed=SEED),
+            "test_mrr@10": bootstrap_mean_ci(base_mrr, seed=SEED),
+        },
     }
+    embed_dir = Path("models/embed")
+    if embed_dir.is_dir() and any(embed_dir.iterdir()):
+        tuned = FaissRetriever(model_name=str(embed_dir)).build(corpus)
+        tuned_recall, tuned_mrr = scores_after_rerank(model, tuned, test_rows)
+        report["finetuned_retriever"] = {
+            "test_recall@5": bootstrap_mean_ci(tuned_recall, seed=SEED),
+            "test_mrr@10": bootstrap_mean_ci(tuned_mrr, seed=SEED),
+        }
+    else:
+        report["finetuned_retriever"] = None
+        report["finetuned_retriever_note"] = (
+            "models/embed is not present, so the reranker was not scored on the fine-tuned retriever."
+        )
     path = Path("results/reranker.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

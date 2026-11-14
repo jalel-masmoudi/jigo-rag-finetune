@@ -13,10 +13,11 @@ RERANK_DEPTH = 20
 
 
 def rerank(model, question, hits):
-    """Return `hits` sorted by the cross-encoder score, highest first.
+    """Return a new list of hits, highest cross-encoder score first.
 
-    `model.predict` takes (question, passage) pairs and returns one
-    score per pair. A hit with no text is left in place at the end.
+    `model.predict` takes (question, passage) pairs. The score stored
+    on each returned hit is that cross-encoder score. The bi-encoder
+    score used to retrieve the hit is not kept.
     """
     if not hits:
         return []
