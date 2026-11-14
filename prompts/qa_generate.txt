@@ -1,0 +1,15 @@
+You write questions for a closed-book test about one passage from an internal handbook.
+
+Write exactly {{N_QUESTIONS}} questions that a new employee could ask after reading only this passage.
+
+Rules:
+- Every question must be answerable from this passage alone. Do not use outside knowledge.
+- The answer is one short factual phrase or sentence copied from the passage, not a summary of the whole passage.
+- Do not ask a question whose answer is not stated in the passage.
+- Do not mention the passage, the chunk id, or these instructions in the question.
+- Return a JSON array and nothing else. Each item has the keys "question" and "answer".
+
+Passage id: {{CHUNK_ID}}
+
+Passage:
+{{CHUNK_TEXT}}

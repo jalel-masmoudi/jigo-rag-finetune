@@ -45,3 +45,20 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# Downloaded corpora and full generated splits. data/sample/ is committed.
+data/raw/
+data/chunks/
+data/train.jsonl
+data/val.jsonl
+data/test.jsonl
+data/test_dropped.jsonl
+data/qa_errors.jsonl
+data/stats.json
+
+# Trained weights, indexes, and evaluation output
+models/
+results/
+*.faiss
+wandb/
+mlruns/
