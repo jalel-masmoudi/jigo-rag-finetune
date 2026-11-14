@@ -24,7 +24,14 @@ def rerank(model, question, hits):
     pairs = [(question, hit["text"]) for hit in hits]
     scores = model.predict(pairs, show_progress_bar=False)
     ordered = sorted(zip(scores, hits), key=lambda item: float(item[0]), reverse=True)
-    return [hit for _score, hit in ordered]
+    # The score on the way out is the cross-encoder score. The bi-encoder
+    # score that retrieved the passage is no longer the sort key.
+    reranked = []
+    for score, hit in ordered:
+        updated = dict(hit)
+        updated["score"] = float(score)
+        reranked.append(updated)
+    return reranked
 
 
 def labeled_pairs(mined_rows):

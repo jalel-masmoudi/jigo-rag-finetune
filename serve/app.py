@@ -10,13 +10,15 @@ on a CPU. It is not the fine-tuned pipeline.
 
 import os
 import time
+from pathlib import Path
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from jigo_rag.generator import QwenGenerator
 from jigo_rag.jsonl import read_jsonl
-from jigo_rag.retriever import FaissRetriever
+from jigo_rag.rerank import rerank
+from jigo_rag.retriever import EMBED_MODEL, FaissRetriever
 
 
 class QueryIn(BaseModel):
@@ -53,21 +55,45 @@ def load_chunks():
     return chunks
 
 
+def saved_model(name, root="."):
+    """Return models/<name> when a training script has written it, else None."""
+    path = Path(root) / "models" / name
+    if path.is_dir() and any(path.iterdir()):
+        return path
+    return None
+
+
 def load_stack():
-    retriever = FaissRetriever().build(load_chunks())
+    # Fine-tuned weights are optional. A fresh checkout serves the baseline.
+    embed = saved_model("embed")
+    retriever = FaissRetriever(model_name=str(embed) if embed else EMBED_MODEL)
+    retriever.build(load_chunks())
+    reranker = None
+    reranker_dir = saved_model("reranker")
+    if reranker_dir is not None:
+        from sentence_transformers import CrossEncoder
+
+        reranker = CrossEncoder(str(reranker_dir))
     if os.environ.get("JIGO_GENERATOR", "qwen") == "extractive":
-        return retriever, ExtractiveGenerator()
-    return retriever, QwenGenerator()
+        generator = ExtractiveGenerator()
+    else:
+        generator = QwenGenerator()
+        lora = saved_model("lora")
+        generator.load(adapter_path=str(lora) if lora else None)
+    return retriever, reranker, generator
 
 
-def create_app(retriever=None, generator=None):
+def create_app(retriever=None, generator=None, reranker=None):
     app = FastAPI(title="jigo-rag-finetune")
-    holder = {"retriever": retriever, "generator": generator}
+    holder = {"retriever": retriever, "generator": generator, "reranker": reranker}
 
     def ready():
         if holder["retriever"] is None or holder["generator"] is None:
-            holder["retriever"], holder["generator"] = load_stack()
-        return holder["retriever"], holder["generator"]
+            loaded_retriever, loaded_reranker, loaded_generator = load_stack()
+            holder["retriever"] = loaded_retriever
+            holder["generator"] = loaded_generator
+            holder["reranker"] = loaded_reranker
+        return holder["retriever"], holder["generator"], holder["reranker"]
 
     @app.get("/health")
     def health():
@@ -75,9 +101,14 @@ def create_app(retriever=None, generator=None):
 
     @app.post("/query", response_model=QueryOut)
     def query(body: QueryIn):
-        retriever, generator = ready()
+        retriever, generator, reranker_model = ready()
         started = time.perf_counter()
-        hits = retriever.search(body.question, k=5)
+        # The cross-encoder only looks at the top 20. Without it, five
+        # passages are enough for the generator.
+        depth = 20 if reranker_model is not None else 5
+        hits = retriever.search(body.question, k=depth)
+        if reranker_model is not None:
+            hits = rerank(reranker_model, body.question, hits)[:5]
         generated = generator.answer(body.question, [hit["text"] for hit in hits])
         latency_ms = (time.perf_counter() - started) * 1000
         return {

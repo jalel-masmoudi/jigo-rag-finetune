@@ -79,6 +79,8 @@ The container listens on `0.0.0.0` and `$PORT` (default 8000). `POST /query` wit
 
 `JIGO_GENERATOR=extractive` skips Qwen and returns the opening of the top passage. Use it to try the service on a CPU. The default generator is Qwen.
 
+If `models/embed`, `models/reranker`, or `models/lora` exist, the service loads those instead of the public checkpoints. A checkout with none of those directories serves the baseline.
+
 ## Tests
 
 ```bash
