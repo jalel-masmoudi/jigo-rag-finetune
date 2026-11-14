@@ -43,9 +43,26 @@ def main():
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is not available. This script is the GPU run, not the CPU smoke checks.")
-    for command in STEPS:
+    training = [command for command in STEPS if command[-1] != "--suite"]
+    suite = [sys.executable, "eval.py", "--suite"]
+    failed = []
+    for command in training:
         print("running", " ".join(command), flush=True)
-        subprocess.check_call(command)
+        try:
+            subprocess.check_call(command)
+        except subprocess.CalledProcessError as exc:
+            failed.append(f"{' '.join(command)} (exit {exc.returncode})")
+            print("that step failed. Finished results are kept. Continuing.", flush=True)
+    print("running", " ".join(suite), flush=True)
+    suite_code = subprocess.call(suite)
+    if suite_code != 0:
+        failed.append(f"{' '.join(suite)} (exit {suite_code})")
+    if failed:
+        raise SystemExit(
+            "Some steps failed:\n"
+            + "\n".join(failed)
+            + "\nEval ran afterward for whatever training finished. Read results/."
+        )
     print("Done. Read results/*.json. Leave the README table empty until those files are from the reviewed test set.")
 
 

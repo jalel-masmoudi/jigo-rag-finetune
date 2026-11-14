@@ -65,7 +65,14 @@ python train_lora.py --check-data
 
 ## Free GPU
 
-`run_gpu.py` runs the baseline eval, the embedding sweep, the reranker, and the QLoRA step, in that order. It exits if CUDA is missing. `notebooks/free_gpu.ipynb` is the same command for Kaggle or Colab. Install `bitsandbytes` there; it is not required for the CPU checks. Model-card templates are in `model_cards/`. Their metric cells are empty on purpose.
+On Kaggle or Colab, do not install torch. Those machines already ship a CUDA build. This repo was checked against torch 2.15.0. `requirements.txt` does not pin torch. `requirements-cpu.txt` is only for a CPU machine, and installing it on the GPU machine would replace the CUDA build.
+
+```bash
+pip install -r requirements.txt bitsandbytes
+python run_gpu.py
+```
+
+`run_gpu.py` trains the embedding model, then the reranker, then the QLoRA generator. If one of those steps fails, it still runs `python eval.py --suite` so the rows for the steps that finished are written, and then it exits with the list of failures. `--suite` writes `results/table.json`. A run that passes `--limit` is marked `"smoke": true` and is not a full test-set result. `notebooks/free_gpu.ipynb` is the same command. Install `bitsandbytes` there. Model-card templates are in `model_cards/`. Their metric cells are empty on purpose.
 
 ## Service
 
