@@ -4,7 +4,7 @@ FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb
 
 WORKDIR /app
 
-COPY requirements-cpu.txt requirements.txt .
+COPY requirements-cpu.txt requirements.txt ./
 # CPU torch first (requirements-cpu.txt), then the other packages.
 # This image is for a machine without a GPU. Kaggle and Colab should not use it;
 # they already have a CUDA build of torch.
