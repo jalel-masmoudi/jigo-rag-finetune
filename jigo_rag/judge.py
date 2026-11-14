@@ -14,6 +14,7 @@ they do. That value is not the judge score.
 """
 
 import json
+import math
 import os
 import re
 import time
@@ -142,7 +143,14 @@ def _retryable(exc):
 
 
 def _retry_delay(exc, attempt):
-    """Seconds to wait. Retry-After wins when the server sends a number."""
+    """Seconds to wait.
+
+    A finite Retry-After is used, and never more than 60 seconds.
+    A negative, non-finite, or unparseable value falls back to the
+    exponential wait. `inf` must not reach time.sleep, which raises
+    OverflowError on it.
+    """
+    fallback = float(min(2 ** attempt, 8))
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None)
     raw = None
@@ -150,12 +158,15 @@ def _retry_delay(exc, attempt):
         raw = headers.get("Retry-After")
         if raw is None:
             raw = headers.get("retry-after")
-    if raw is not None:
-        try:
-            return max(0.0, float(raw))
-        except (TypeError, ValueError):
-            pass
-    return float(min(2 ** attempt, 8))
+    if raw is None:
+        return fallback
+    try:
+        delay = float(raw)
+    except (TypeError, ValueError):
+        return fallback
+    if not math.isfinite(delay) or delay < 0:
+        return fallback
+    return min(delay, 60.0)
 
 
 def judge_failure_skips(exc):

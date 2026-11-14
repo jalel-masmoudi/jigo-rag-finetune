@@ -170,6 +170,24 @@ def test_rate_limit_then_success_returns_the_score(monkeypatch):
     assert slept == [7.0]
 
 
+def test_retry_after_is_capped_and_non_finite_values_use_backoff():
+    from jigo_rag.judge import _retry_delay
+
+    def delay(raw, attempt=0):
+        response = type("Response", (), {"headers": {"Retry-After": raw}})()
+        error = type("Error", (), {"response": response})()
+        return _retry_delay(error, attempt)
+
+    assert delay("86400") == 60.0
+    assert delay("7") == 7.0
+    # attempt 0 waits 2**0 seconds when the header cannot be used.
+    assert delay("inf") == 1.0
+    assert delay("nan") == 1.0
+    assert delay("-5") == 1.0
+    assert delay("soon") == 1.0
+    assert delay("inf", attempt=3) == 8.0
+
+
 def test_persistent_rate_limit_skips_the_judge_and_the_loop_continues(monkeypatch):
     from google.genai.errors import ClientError
 
