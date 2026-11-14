@@ -25,7 +25,7 @@ import json
 import time
 from pathlib import Path
 
-from jigo_rag.generator import QwenGenerator
+from jigo_rag.generator import GENERATOR_MODEL, QwenGenerator
 from jigo_rag.jsonl import read_jsonl
 from jigo_rag.judge import (
     default_model,
@@ -158,7 +158,7 @@ def summarize(per_question, n_resamples, seed):
     return report
 
 
-def run(rows, retriever, generator, judge, smoke, n_resamples, seed):
+def run(rows, retriever, generator, judge, smoke, n_resamples, seed, lora_generator=None):
     per_question = []
     latencies_ms = []
     for row in rows:
@@ -180,24 +180,22 @@ def run(rows, retriever, generator, judge, smoke, n_resamples, seed):
         # the system a user would wait on.
         record["latency_ms"] = (time.perf_counter() - started) * 1000
         latencies_ms.append(record["latency_ms"])
+        lora_answer = None
+        if lora_generator is not None:
+            # Same passages as the baseline generator. Its own clock is
+            # retrieval plus this generation, not the baseline generation.
+            lora_started = time.perf_counter()
+            lora_out = lora_generator.answer(row["question"], passages)
+            lora_gen_ms = (time.perf_counter() - lora_started) * 1000
+            lora_answer = lora_out["answer"]
+            record["lora_exact_match"] = exact_match(lora_answer, row["answer"])
+            record["lora_token_f1"] = token_f1(lora_answer, row["answer"])
+            record["lora_tokens"] = lora_out["prompt_tokens"] + lora_out["completion_tokens"]
+            record["lora_latency_ms"] = record["retrieval_latency_ms"] + lora_gen_ms
         if generator is not None and judge is not None:
-            prediction = generated["answer"]
-            # The test questions all have an answer, so "not found" is 0
-            # on the judge that goes in the table. The other column says
-            # whether that refusal matched a retrieval miss.
-            forced = end_to_end_not_found(prediction)
-            if forced is not None:
-                record["judge"] = forced
-                record["retrieval_conditioned_judge"] = not_found_score(
-                    prediction, row["answer"], passages
-                )
-            else:
-                try:
-                    record["judge"] = judge(row["question"], passages, row["answer"], prediction)
-                except Exception as exc:
-                    if not judge_failure_skips(exc):
-                        raise
-                    record["judge_skipped"] = True
+            record.update(_judge_fields(judge, row, passages, generated["answer"], prefix=""))
+        if lora_answer is not None and judge is not None:
+            record.update(_judge_fields(judge, row, passages, lora_answer, prefix="lora_"))
         per_question.append(record)
     summary = summarize(per_question, n_resamples, seed)
     summary["latency_ms"] = {
@@ -207,6 +205,28 @@ def run(rows, retriever, generator, judge, smoke, n_resamples, seed):
     }
     if generator is not None and "tokens" in per_question[0]:
         summary["tokens_per_query"] = sum(row["tokens"] for row in per_question) / len(per_question)
+    if lora_generator is not None:
+        summary["lora"] = {
+            "seed": seed,
+            "exact_match": bootstrap_mean_ci(
+                [row["lora_exact_match"] for row in per_question], n_resamples=n_resamples, seed=seed
+            ),
+            "token_f1": bootstrap_mean_ci(
+                [row["lora_token_f1"] for row in per_question], n_resamples=n_resamples, seed=seed
+            ),
+            "latency_ms": {
+                "p50": percentile([row["lora_latency_ms"] for row in per_question], 50),
+                "p95": percentile([row["lora_latency_ms"] for row in per_question], 95),
+                "n": len(per_question),
+            },
+        }
+        lora_judged = [row["lora_judge"] for row in per_question if "lora_judge" in row]
+        if lora_judged:
+            summary["lora"]["judge"] = bootstrap_mean_ci(lora_judged, n_resamples=n_resamples, seed=seed)
+        skipped = sum(1 for row in per_question if row.get("lora_judge_skipped"))
+        if skipped:
+            summary["lora"]["judge_skipped"] = skipped
+    summary["seed"] = seed
     summary["smoke"] = smoke
     summary["n"] = len(rows)
     summary["n_chunks_indexed"] = len(retriever.chunks)
@@ -242,6 +262,36 @@ def _make_judge():
     return judge
 
 
+def _judge_fields(judge, row, passages, prediction, prefix):
+    """Score one answer. A parse failure is counted, not fatal.
+
+    'not found' is 0 on the end-to-end judge. The retrieval-conditioned
+    value is a separate field and is not that score.
+    """
+    key = f"{prefix}judge" if prefix else "judge"
+    skip_key = f"{prefix}judge_skipped" if prefix else "judge_skipped"
+    cond_key = f"{prefix}retrieval_conditioned_judge" if prefix else "retrieval_conditioned_judge"
+    forced = end_to_end_not_found(prediction)
+    if forced is not None:
+        return {key: forced, cond_key: not_found_score(prediction, row["answer"], passages)}
+    try:
+        return {key: judge(row["question"], passages, row["answer"], prediction)}
+    except Exception as exc:
+        if not judge_failure_skips(exc):
+            raise
+        return {skip_key: True}
+
+
+def read_adapter_config(path):
+    """The rank and alpha stored with the adapter, when the file is there."""
+    config_path = Path(path) / "adapter_config.json"
+    if not config_path.exists():
+        return {}
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    keys = ("r", "lora_alpha", "target_modules", "base_model_name_or_path")
+    return {key: data[key] for key in keys if key in data}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--retrieval-only", action="store_true")
@@ -250,6 +300,7 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="score only the first N reviewed rows")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--bootstrap", type=int, default=1000)
+    parser.add_argument("--lora", default="", help="LoRA adapter directory. Scored on the same retrieved passages as the baseline generator.")
     parser.add_argument("--output", default="")
     args = parser.parse_args()
 
@@ -262,12 +313,32 @@ def main():
         rows = load_reviewed_test()
         if args.limit:
             rows = rows[: args.limit]
-        output = Path(args.output or "results/baseline.json")
+        output = Path(args.output or ("results/e3.json" if args.lora else "results/baseline.json"))
 
     generator = None if args.retrieval_only else QwenGenerator()
+    lora_generator = None
+    if args.lora:
+        if args.retrieval_only:
+            raise SystemExit("--lora scores a generator, so it cannot be combined with --retrieval-only.")
+        if not Path(args.lora).is_dir():
+            raise SystemExit(f"LoRA adapter not found: {args.lora}")
+        lora_generator = QwenGenerator(adapter_path=args.lora)
     judge = _make_judge() if generator is not None else None
 
-    summary = run(rows, retriever, generator, judge, smoke=args.smoke, n_resamples=args.bootstrap, seed=args.seed)
+    summary = run(
+        rows,
+        retriever,
+        generator,
+        judge,
+        smoke=args.smoke,
+        n_resamples=args.bootstrap,
+        seed=args.seed,
+        lora_generator=lora_generator,
+    )
+    if lora_generator is not None:
+        summary["lora"]["adapter"] = args.lora
+        summary["lora"]["config"] = read_adapter_config(args.lora)
+        summary["lora"]["base_model"] = GENERATOR_MODEL
     if args.smoke:
         summary["query_source"] = "first_sentence_of_gold_chunk"
         summary["note"] = (

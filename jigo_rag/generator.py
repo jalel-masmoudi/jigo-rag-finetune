@@ -31,20 +31,28 @@ def build_messages(question, passages):
 
 
 class QwenGenerator:
-    def __init__(self, model_name=GENERATOR_MODEL):
+    def __init__(self, model_name=GENERATOR_MODEL, adapter_path=None):
         self.model_name = model_name
+        self.adapter_path = adapter_path
         self.model = None
         self.tokenizer = None
 
-    def load(self):
+    def load(self, adapter_path=None):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        adapter_path = adapter_path or self.adapter_path
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         # float16 on CUDA. On CPU, float32 is the path that actually runs;
         # float16 kernels are incomplete there.
         dtype = torch.float16 if torch.cuda.is_available() else torch.float32
         self.model = AutoModelForCausalLM.from_pretrained(self.model_name, dtype=dtype)
+        if adapter_path:
+            # The adapter is a small set of LoRA matrices. It can sit on
+            # the full-precision model for inference, including on CPU.
+            from peft import PeftModel
+
+            self.model = PeftModel.from_pretrained(self.model, adapter_path)
         if torch.cuda.is_available():
             self.model.to("cuda")
         self.model.eval()

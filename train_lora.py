@@ -21,7 +21,7 @@ import json
 
 from jigo_rag.generator import GENERATOR_MODEL
 from jigo_rag.jsonl import read_jsonl
-from jigo_rag.lora_data import build_examples
+from jigo_rag.lora_data import build_examples, collate_for_training
 
 LORA_R = 16
 LORA_ALPHA = 32
@@ -61,12 +61,19 @@ def four_bit_config():
 
 
 def load_training_rows():
-    rows = read_jsonl("data/train.jsonl")
-    corpus = []
-    for split in ("train", "val", "test"):
-        corpus.extend(read_jsonl(f"data/chunks/{split}.jsonl"))
-    if rows and corpus:
-        return rows, corpus
+    from pathlib import Path
+
+    train_path = Path("data/train.jsonl")
+    chunk_dir = Path("data/chunks")
+    if train_path.exists() and chunk_dir.exists():
+        rows = read_jsonl(train_path)
+        corpus = []
+        for split in ("train", "val", "test"):
+            path = chunk_dir / f"{split}.jsonl"
+            if path.exists():
+                corpus.extend(read_jsonl(path))
+        if rows and corpus:
+            return rows, corpus
     # A single literal example so --check-data works before Gemini has run.
     # It is not written to the training file.
     demo_row = {
@@ -83,9 +90,32 @@ def load_training_rows():
     return [demo_row], demo_corpus
 
 
+def _search_for(rows, corpus):
+    """Retrieval over training chunks, or a tiny stand-in for the demo."""
+    train_corpus = [chunk for chunk in corpus if chunk.get("split", "train") == "train"]
+    if rows and rows[0]["doc_id"].startswith("demo/"):
+
+        def demo_search(question, k):
+            return [
+                {"chunk_id": chunk["chunk_id"], "doc_id": chunk["doc_id"], "text": chunk["text"]}
+                for chunk in train_corpus
+            ][:k]
+
+        return train_corpus, demo_search
+    from jigo_rag.retriever import FaissRetriever
+
+    retriever = FaissRetriever().build(train_corpus)
+
+    def search(question, k):
+        return retriever.search(question, k=k)
+
+    return train_corpus, search
+
+
 def check_data():
     rows, corpus = load_training_rows()
-    examples = build_examples(rows, corpus)
+    train_corpus, search = _search_for(rows, corpus)
+    examples = build_examples(rows, train_corpus, search)
     kinds = {example["kind"] for example in examples}
     counts = {
         "answer": sum(example["kind"] == "answer" for example in examples),
@@ -115,7 +145,8 @@ def train():
     rows, corpus = load_training_rows()
     if rows[0]["doc_id"].startswith("demo/"):
         raise SystemExit("Refusing to train on the demo example. Run generate_qa.py first.")
-    examples = build_examples(rows, corpus)
+    train_corpus, search = _search_for(rows, corpus)
+    examples = build_examples(rows, train_corpus, search)
     tokenizer = AutoTokenizer.from_pretrained(GENERATOR_MODEL)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -129,22 +160,7 @@ def train():
     model.print_trainable_parameters()
 
     def collate(batch_examples):
-        prompts = []
-        fulls = []
-        for example in batch_examples:
-            messages = example["messages"]
-            prompts.append(
-                tokenizer.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)
-            )
-            fulls.append(tokenizer.apply_chat_template(messages, tokenize=False))
-        prompt_lengths = [len(tokenizer(prompt)["input_ids"]) for prompt in prompts]
-        batch = tokenizer(fulls, return_tensors="pt", padding=True, truncation=True, max_length=1024)
-        labels = batch["input_ids"].clone()
-        labels[batch["attention_mask"] == 0] = -100
-        for index, prompt_length in enumerate(prompt_lengths):
-            labels[index, :prompt_length] = -100
-        batch["labels"] = labels
-        return batch
+        return collate_for_training(batch_examples, tokenizer)
 
     loader = DataLoader(examples, batch_size=1, shuffle=True, collate_fn=collate)
     optimizer = torch.optim.AdamW((parameter for parameter in model.parameters() if parameter.requires_grad), lr=2e-4)
