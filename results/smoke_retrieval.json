@@ -1,0 +1,37 @@
+{
+  "recall@1": {
+    "mean": 0.9333333333333333,
+    "ci_low": 0.8333333333333334,
+    "ci_high": 1.0,
+    "n": 30,
+    "n_resamples": 1000,
+    "seed": 42
+  },
+  "recall@5": {
+    "mean": 0.9666666666666667,
+    "ci_low": 0.9,
+    "ci_high": 1.0,
+    "n": 30,
+    "n_resamples": 1000,
+    "seed": 42
+  },
+  "mrr@10": {
+    "mean": 0.9444444444444444,
+    "ci_low": 0.8555555555555556,
+    "ci_high": 1.0,
+    "n": 30,
+    "n_resamples": 1000,
+    "seed": 42
+  },
+  "latency_ms": {
+    "p50": 9.07905199983361,
+    "p95": 26.789135000399256,
+    "n": 30
+  },
+  "seed": 42,
+  "smoke": true,
+  "n": 30,
+  "n_chunks_indexed": 775,
+  "query_source": "first_sentence_of_gold_chunk",
+  "note": "Smoke check only. The query is a sentence from the gold chunk. Do not copy these numbers into the results table."
+}

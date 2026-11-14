@@ -39,6 +39,8 @@ def test_empty_question_is_rejected():
     client = TestClient(create_app(_Retriever(), _Generator()))
     response = client.post("/query", json={"question": ""})
     assert response.status_code == 422
+    blank = client.post("/query", json={"question": "   "})
+    assert blank.status_code == 422
 
 
 def test_reranker_reorders_sources_before_the_answer():

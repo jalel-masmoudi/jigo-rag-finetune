@@ -158,12 +158,20 @@ def summarize(per_question, n_resamples, seed):
     return report
 
 
-def run(rows, retriever, generator, judge, smoke, n_resamples, seed, lora_generator=None):
+def run(rows, retriever, generator, judge, smoke, n_resamples, seed, lora_generator=None, reranker=None):
     per_question = []
     latencies_ms = []
     for row in rows:
         started = time.perf_counter()
-        hits = retriever.search(row["question"], k=10)
+        # MRR@10 needs ten hits. The reranker looks at twenty, then we
+        # score the reordered list.
+        depth = 20 if reranker is not None else 10
+        hits = retriever.search(row["question"], k=depth)
+        if reranker is not None:
+            from jigo_rag.rerank import rerank
+
+            hits = rerank(reranker, row["question"], hits)
+        hits = hits[:10]
         retrieval_seconds = time.perf_counter() - started
         record = score_retrieval(row["gold_chunk_id"], hits)
         record["retrieval_latency_ms"] = retrieval_seconds * 1000
@@ -305,6 +313,108 @@ def read_adapter_config(path):
     return {key: data[key] for key in keys if key in data}
 
 
+def suite_is_smoke(limit):
+    """Any --limit run is a partial file, not the full test set."""
+    return bool(limit)
+
+
+def planned_rows(has_embed, has_reranker, has_lora):
+    """Which table rows a suite can produce from the weights that exist.
+
+    The reranker row and the full pipeline both need the fine-tuned
+    retriever, because that is the retriever they sit on. The LoRA row
+    is the generator comparison on the baseline retrieval.
+    """
+    rows = ["baseline"]
+    if has_embed:
+        rows.append("finetuned_embeddings")
+    if has_embed and has_reranker:
+        rows.append("reranker")
+    if has_lora:
+        rows.append("lora_generator")
+    if has_embed and has_reranker and has_lora:
+        rows.append("full")
+    return rows
+
+
+def _present(path):
+    directory = Path(path)
+    return directory if directory.is_dir() and any(directory.iterdir()) else None
+
+
+def run_suite(args):
+    """One command for every results-table row the weights can support.
+
+    Missing weights leave that row null. Nothing is filled in with a guess.
+    """
+    chunks = load_corpus()
+    rows = load_reviewed_test()
+    if args.limit:
+        rows = rows[: args.limit]
+    embed = _present(args.embed_model or "models/embed")
+    reranker_dir = _present(args.reranker or "models/reranker")
+    lora = _present(args.lora or "models/lora")
+    names = planned_rows(bool(embed), bool(reranker_dir), bool(lora))
+    judge = None if args.retrieval_only else _make_judge()
+    baseline = FaissRetriever().build(chunks)
+    tuned = FaissRetriever(model_name=str(embed)).build(chunks) if embed else None
+    reranker_model = None
+    if reranker_dir is not None:
+        from sentence_transformers import CrossEncoder
+
+        reranker_model = CrossEncoder(str(reranker_dir))
+    lora_generator = QwenGenerator(adapter_path=str(lora)) if lora else None
+    generator = None if args.retrieval_only else QwenGenerator()
+
+    def one(retriever, generator_model, lora_model=None, reranker=None):
+        return run(
+            rows,
+            retriever,
+            generator_model,
+            judge,
+            smoke=False,
+            n_resamples=args.bootstrap,
+            seed=args.seed,
+            lora_generator=lora_model,
+            reranker=reranker,
+        )
+
+    # A limited run is not the full test set, so it is marked as a smoke file.
+    table = {"smoke": suite_is_smoke(args.limit), "seed": args.seed, "rows": {}}
+    if args.limit:
+        table["limit"] = args.limit
+    table["rows"]["baseline"] = one(baseline, generator)
+    if "finetuned_embeddings" in names:
+        table["rows"]["finetuned_embeddings"] = one(tuned, generator)
+    else:
+        table["rows"]["finetuned_embeddings"] = None
+    if "reranker" in names:
+        table["rows"]["reranker"] = one(tuned, generator, reranker=reranker_model)
+    else:
+        table["rows"]["reranker"] = None
+    if "lora_generator" in names:
+        compared = one(baseline, generator, lora_model=lora_generator)
+        table["rows"]["lora_generator"] = compared["lora"]
+        table["rows"]["lora_generator"]["adapter"] = str(lora)
+        table["rows"]["lora_generator"]["config"] = read_adapter_config(lora)
+        table["rows"]["lora_generator"]["base_model"] = GENERATOR_MODEL
+    else:
+        table["rows"]["lora_generator"] = None
+    if "full" in names:
+        table["rows"]["full"] = one(tuned, lora_generator, reranker=reranker_model)
+    else:
+        table["rows"]["full"] = None
+    table["note"] = (
+        "A null row means the weights for that setup were not on disk. "
+        "It is not a score of zero."
+    )
+    output = Path(args.output or "results/table.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(table, indent=2) + "\n", encoding="utf-8")
+    print(f"wrote {output}")
+    print("rows:", ", ".join(name for name, value in table["rows"].items() if value))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--retrieval-only", action="store_true")
@@ -313,12 +423,31 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="score only the first N reviewed rows")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--bootstrap", type=int, default=1000)
+    parser.add_argument("--embed-model", default="", help="Fine-tuned embedding directory. Default for --suite is models/embed.")
+    parser.add_argument("--reranker", default="", help="Cross-encoder directory. Default for --suite is models/reranker.")
     parser.add_argument("--lora", default="", help="LoRA adapter directory. Scored on the same retrieved passages as the baseline generator.")
+    parser.add_argument("--suite", action="store_true", help="Write every table row the weights on disk can support, including the full pipeline.")
     parser.add_argument("--output", default="")
     args = parser.parse_args()
 
+    if args.suite:
+        run_suite(args)
+        return
+
     chunks = load_corpus()
-    retriever = FaissRetriever().build(chunks)
+    if args.embed_model:
+        if not _present(args.embed_model):
+            raise SystemExit(f"Embedding model not found: {args.embed_model}")
+        retriever = FaissRetriever(model_name=args.embed_model).build(chunks)
+    else:
+        retriever = FaissRetriever().build(chunks)
+    reranker_model = None
+    if args.reranker:
+        if not _present(args.reranker):
+            raise SystemExit(f"Reranker not found: {args.reranker}")
+        from sentence_transformers import CrossEncoder
+
+        reranker_model = CrossEncoder(args.reranker)
     if args.smoke:
         rows = smoke_rows(chunks, args.smoke_size, args.seed)
         output = Path(args.output or "results/smoke_retrieval.json")
@@ -347,6 +476,7 @@ def main():
         n_resamples=args.bootstrap,
         seed=args.seed,
         lora_generator=lora_generator,
+        reranker=reranker_model,
     )
     if lora_generator is not None:
         summary["lora"]["adapter"] = args.lora

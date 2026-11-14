@@ -1,0 +1,7 @@
+{
+  "smoke": true,
+  "top_chunk_after_rerank": "gold#0",
+  "max_steps": 1,
+  "batch_size": 2,
+  "note": "Two-pair reorder plus one optimizer step. Not a Recall@5 on the test set."
+}

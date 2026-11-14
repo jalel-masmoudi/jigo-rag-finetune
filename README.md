@@ -85,7 +85,8 @@ If `models/embed`, `models/reranker`, or `models/lora` exist, the service loads 
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+.venv/bin/pip install -r requirements-cpu.txt
+.venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pytest
 ```
 

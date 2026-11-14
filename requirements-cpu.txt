@@ -1,0 +1,6 @@
+# CPU wheel of torch 2.15.0. Install this before requirements.txt on a
+# machine that does not already have torch. Do not use this file on
+# Kaggle or Colab: those images already ship torch built for CUDA, and
+# installing this wheel would replace it.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.15.0

@@ -1,0 +1,8 @@
+{
+  "smoke": true,
+  "n_rows": 8,
+  "max_steps": 1,
+  "batch_size": 2,
+  "learning_rate": 2e-05,
+  "note": "One optimizer step on sentence-from-the-chunk pairs. Not a validation or test score."
+}

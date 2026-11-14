@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from jigo_rag.generator import QwenGenerator
 from jigo_rag.jsonl import read_jsonl
@@ -23,6 +23,14 @@ from jigo_rag.retriever import EMBED_MODEL, FaissRetriever
 
 class QueryIn(BaseModel):
     question: str = Field(min_length=1)
+
+    @field_validator("question")
+    @classmethod
+    def question_is_not_blank(cls, value):
+        # Spaces have length, so min_length does not catch a blank question.
+        if not value.strip():
+            raise ValueError("question is empty")
+        return value
 
 
 class SourceOut(BaseModel):

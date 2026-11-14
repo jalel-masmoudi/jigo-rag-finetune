@@ -41,6 +41,28 @@ def test_exact_match_and_token_f1():
     assert token_f1("answer", "") == 0
 
 
+def test_suite_limit_is_marked_smoke():
+    from eval import suite_is_smoke
+
+    assert suite_is_smoke(5) is True
+    assert suite_is_smoke(0) is False
+
+
+def test_suite_plan_covers_the_full_pipeline_only_when_every_weight_exists():
+    from eval import planned_rows
+
+    assert planned_rows(False, False, False) == ["baseline"]
+    assert planned_rows(True, True, True) == [
+        "baseline",
+        "finetuned_embeddings",
+        "reranker",
+        "lora_generator",
+        "full",
+    ]
+    assert "reranker" not in planned_rows(False, True, True)
+    assert "full" not in planned_rows(True, False, True)
+
+
 def test_paired_bootstrap_is_the_gain_on_the_same_questions():
     baseline = [0, 0, 1, 1]
     new = [1, 1, 1, 1]

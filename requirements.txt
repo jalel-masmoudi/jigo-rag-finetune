@@ -1,8 +1,10 @@
 transformers==5.23.0
 google-genai==3.3.0
 pytest==9.2.0
-# CPU build. If pip cannot see it, add --index-url https://download.pytorch.org/whl/cpu
-torch==2.15.0+cpu
+# torch is not listed here. Kaggle and Colab already provide a CUDA build
+# (2.15.0 is the version this repo was checked against). Installing a pin
+# from this file would replace that build. On a CPU machine, install
+# requirements-cpu.txt first: it pins torch==2.15.0 from the CPU index.
 sentence-transformers==6.3.0
 faiss-cpu==1.16.0
 numpy==2.5.4
