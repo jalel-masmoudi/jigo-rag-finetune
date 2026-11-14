@@ -27,7 +27,14 @@ from pathlib import Path
 
 from jigo_rag.generator import QwenGenerator
 from jigo_rag.jsonl import read_jsonl
-from jigo_rag.judge import default_model, judge_available, judge_one
+from jigo_rag.judge import (
+    default_model,
+    format_passages,
+    judge_available,
+    judge_one,
+    judge_with_retries,
+    not_found_score,
+)
 from jigo_rag.metrics import (
     bootstrap_mean_ci,
     exact_match,
@@ -116,6 +123,15 @@ QUALITY_KEYS = ("recall@1", "recall@5", "mrr@10", "exact_match", "token_f1", "ju
 def summarize(per_question, n_resamples, seed):
     report = {}
     for key in QUALITY_KEYS:
+        if key == "judge":
+            scored = [row["judge"] for row in per_question if "judge" in row]
+            skipped = sum(1 for row in per_question if row.get("judge_skipped"))
+            if skipped:
+                report["judge_skipped"] = skipped
+            if not scored:
+                continue
+            report["judge"] = bootstrap_mean_ci(scored, n_resamples=n_resamples, seed=seed)
+            continue
         if key not in per_question[0]:
             continue
         report[key] = bootstrap_mean_ci(
@@ -133,23 +149,28 @@ def run(rows, retriever, generator, judge, smoke, n_resamples, seed):
         retrieval_seconds = time.perf_counter() - started
         record = score_retrieval(row["gold_chunk_id"], hits)
         record["retrieval_latency_ms"] = retrieval_seconds * 1000
+        passages = [hit["text"] for hit in hits[:5]]
+        generated = None
         if generator is not None:
             gen_started = time.perf_counter()
-            generated = generator.answer(row["question"], [hit["text"] for hit in hits[:5]])
+            generated = generator.answer(row["question"], passages)
             record["exact_match"] = exact_match(generated["answer"], row["answer"])
             record["token_f1"] = token_f1(generated["answer"], row["answer"])
             record["tokens"] = generated["prompt_tokens"] + generated["completion_tokens"]
             record["generation_latency_ms"] = (time.perf_counter() - gen_started) * 1000
-            if judge is not None:
-                record["judge"] = judge(
-                    row["question"],
-                    row.get("chunk_text", hits[0]["text"] if hits else ""),
-                    row["answer"],
-                    generated["answer"],
-                )
-        total_ms = (time.perf_counter() - started) * 1000
-        record["latency_ms"] = total_ms
-        latencies_ms.append(total_ms)
+        # The clock stops before the judge. The judge is not part of
+        # the system a user would wait on.
+        record["latency_ms"] = (time.perf_counter() - started) * 1000
+        latencies_ms.append(record["latency_ms"])
+        if generator is not None and judge is not None:
+            decided = not_found_score(generated["answer"], row["answer"], passages)
+            if decided is not None:
+                record["judge"] = decided
+            else:
+                try:
+                    record["judge"] = judge(row["question"], passages, row["answer"], generated["answer"])
+                except ValueError:
+                    record["judge_skipped"] = True
         per_question.append(record)
     summary = summarize(per_question, n_resamples, seed)
     summary["latency_ms"] = {
@@ -188,18 +209,26 @@ def main():
         output = Path(args.output or "results/baseline.json")
 
     generator = None if args.retrieval_only else QwenGenerator()
+    # Load .env before checking the key, or a key that lives only in
+    # .env looks missing.
+    from generate_qa import load_dotenv
+
+    load_dotenv()
     judge = None
     if generator is not None and judge_available():
-        from generate_qa import load_dotenv
         from google import genai
 
-        load_dotenv()
         template = JUDGE_PROMPT.read_text(encoding="utf-8")
         client = genai.Client(api_key=__import__("os").environ["GEMINI_API_KEY"])
         model = default_model()
 
-        def judge(question, context, reference, prediction, _client=client, _model=model, _template=template):
-            return judge_one(_client, _model, _template, question, context, reference, prediction)
+        def judge(question, passages, reference, prediction, _client=client, _model=model, _template=template):
+            context = format_passages(passages)
+
+            def call():
+                return judge_one(_client, _model, _template, question, context, reference, prediction)
+
+            return judge_with_retries(call)
 
     elif generator is not None:
         print("GEMINI_API_KEY is not set. The judge score will be null.")

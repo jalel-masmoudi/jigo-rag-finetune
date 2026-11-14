@@ -6,11 +6,11 @@ Retrieval
   Rank 1 is the first hit.
 
 Answers
-- Exact match compares the normalized strings. Normalization lowercases,
-  turns punctuation into spaces, and collapses whitespace.
-- Token F1 is the F1 of the whitespace tokens after that same normalization.
-  Repeated words are counted with their multiplicity (a multiset), which is
-  the usual SQuAD token F1.
+- Exact match and token F1 use SQuAD normalization: lowercase, strip
+  punctuation, drop the articles a/an/the, collapse whitespace. Letters
+  outside ASCII are kept, so "café" stays "café".
+- Token F1 is the F1 of those tokens. Repeated words count with their
+  multiplicity (a multiset), which is the SQuAD token F1.
 
 Uncertainty
 - A 95% confidence interval is a percentile bootstrap of the mean.
@@ -27,9 +27,11 @@ from collections import Counter
 
 
 def normalize(text):
+    """SQuAD normalization. Unicode letters are kept."""
     text = text.lower()
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = "".join(character if character.isalnum() or character.isspace() else " " for character in text)
+    text = re.sub(r"\b(a|an|the)\b", " ", text)
+    return " ".join(text.split())
 
 
 def exact_match(prediction, gold):

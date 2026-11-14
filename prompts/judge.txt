@@ -1,19 +1,20 @@
-Score one answer to a handbook question.
+Score the system's answer to a handbook question.
 
-The reference answer is the fact that should have been stated. The context is the only passage the system was given.
+You are shown only the passages the system retrieved. Do not assume it saw any other page. The reference answer is the fact that should have been stated if those passages contain it.
 
 Score:
-- 1 if the system answer states the same fact as the reference and that fact is in the context
+- 1 if the system answer states the same fact as the reference
+- 1 if the system answer is "not found" and the reference fact is not in the retrieved passages
 - 0.5 if the system answer is partly right or leaves out an important part of the reference
-- 0 if the system answer is wrong, contradicts the reference, or says "not found" when the reference fact is in the context
+- 0 if the system answer is wrong, or if it says "not found" while the retrieved passages contain the reference fact
 
 Return a JSON object and nothing else: {"score": 0, "reason": "one sentence"}
-The score must be 0, 0.5, or 1.
+The score must be the number 0, 0.5, or 1. Do not use true or false.
 
 Question:
 {{QUESTION}}
 
-Context:
+Retrieved passages:
 {{CONTEXT}}
 
 Reference answer:

@@ -1,7 +1,7 @@
 """Retrieval and answer metrics, including the bootstrap interval."""
 
 from jigo_rag.generator import NOT_FOUND, build_messages
-from jigo_rag.judge import fill_judge_prompt, parse_judge_score
+from jigo_rag.judge import fill_judge_prompt, judge_with_retries, parse_judge_score
 from jigo_rag.metrics import (
     bootstrap_mean_ci,
     exact_match,
@@ -24,9 +24,13 @@ def test_recall_and_mrr():
 
 def test_exact_match_and_token_f1():
     assert exact_match("Hello, World!", "hello world") == 1
+    assert exact_match("The cat.", "cat") == 1
+    assert token_f1("the cat", "cat") == 1.0
+    # café is a letter, not punctuation, so it survives normalization.
+    assert exact_match("Café!", "café") == 1
     assert exact_match("not found", "Concur") == 0
-    # two of three tokens overlap on each side: F1 is 2/3
-    assert abs(token_f1("a b c", "b c d") - (2 / 3)) < 1e-9
+    # two of three content tokens overlap: F1 is 2/3
+    assert abs(token_f1("alpha beta gamma", "beta gamma delta") - (2 / 3)) < 1e-9
     assert token_f1("", "") == 1
     assert token_f1("answer", "") == 0
 
@@ -69,6 +73,61 @@ def test_generator_prompt_requires_not_found_and_numbers_passages():
     assert "Where is travel booked?" in messages[1]["content"]
 
 
+def test_unparseable_judge_replies_are_retried_then_raised():
+    calls = {"n": 0}
+
+    def bad():
+        calls["n"] += 1
+        raise ValueError("not json")
+
+    try:
+        judge_with_retries(bad, attempts=3)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a bad judge reply was accepted")
+    assert calls["n"] == 3
+
+
+def test_not_found_after_a_retrieval_miss_scores_one():
+    from jigo_rag.judge import not_found_score
+
+    assert not_found_score("not found", "Book travel in Concur.", ["The office is closed."]) == 1.0
+    assert not_found_score("Not found.", "Book travel in Concur.", ["Book travel in Concur before the trip."]) == 0.0
+    assert not_found_score("In Concur.", "Book travel in Concur.", ["Book travel in Concur."]) is None
+
+
+def test_latency_does_not_include_the_judge():
+    import time
+
+    from eval import run
+
+    class Retriever:
+        chunks = [None]
+
+        def search(self, query, k=10):
+            return [{"chunk_id": "doc#0", "text": "Book travel in Concur.", "doc_id": "doc"}]
+
+    class Generator:
+        def answer(self, question, passages, max_new_tokens=128):
+            return {"answer": "somewhere else", "prompt_tokens": 1, "completion_tokens": 1}
+
+    def slow_judge(question, passages, reference, prediction):
+        time.sleep(0.2)
+        return 0.0
+
+    summary = run(
+        [{"question": "Where?", "answer": "In Concur.", "gold_chunk_id": "doc#0"}],
+        Retriever(),
+        Generator(),
+        slow_judge,
+        smoke=True,
+        n_resamples=10,
+        seed=1,
+    )
+    assert summary["latency_ms"]["p50"] < 150
+
+
 def test_judge_prompt_and_score_parser():
     filled = fill_judge_prompt(
         "Q {{QUESTION}} C {{CONTEXT}} R {{REFERENCE}} P {{PREDICTION}}",
@@ -80,9 +139,9 @@ def test_judge_prompt_and_score_parser():
     assert filled == "Q q C c R r P p"
     assert parse_judge_score('{"score": 1, "reason": "same fact"}') == 1
     assert parse_judge_score('{"score": 0.5, "reason": "partial"}') == 0.5
-    try:
-        parse_judge_score('{"score": 2, "reason": "no"}')
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("a score of 2 was accepted")
+    for bad in ('{"score": 2, "reason": "no"}', '{"score": true, "reason": "no"}'):
+        try:
+            parse_judge_score(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad}")
