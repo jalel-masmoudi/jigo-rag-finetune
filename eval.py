@@ -29,6 +29,7 @@ from jigo_rag.generator import QwenGenerator
 from jigo_rag.jsonl import read_jsonl
 from jigo_rag.judge import (
     default_model,
+    end_to_end_not_found,
     format_passages,
     judge_available,
     judge_one,
@@ -124,13 +125,29 @@ def summarize(per_question, n_resamples, seed):
     report = {}
     for key in QUALITY_KEYS:
         if key == "judge":
+            if not any("judge" in row or row.get("judge_skipped") for row in per_question):
+                continue
             scored = [row["judge"] for row in per_question if "judge" in row]
             skipped = sum(1 for row in per_question if row.get("judge_skipped"))
-            if skipped:
-                report["judge_skipped"] = skipped
-            if not scored:
-                continue
-            report["judge"] = bootstrap_mean_ci(scored, n_resamples=n_resamples, seed=seed)
+            if scored:
+                judge_summary = bootstrap_mean_ci(scored, n_resamples=n_resamples, seed=seed)
+            else:
+                judge_summary = {"mean": None, "n": 0}
+            judge_summary["skipped"] = skipped
+            report["judge"] = judge_summary
+            conditioned = [
+                row["retrieval_conditioned_judge"]
+                for row in per_question
+                if "retrieval_conditioned_judge" in row
+            ]
+            if conditioned:
+                report["retrieval_conditioned_judge"] = bootstrap_mean_ci(
+                    conditioned, n_resamples=n_resamples, seed=seed
+                )
+                report["retrieval_conditioned_judge"]["label"] = (
+                    "Not-found replies only. 1 when the retrieved passages do not "
+                    "contain the reference, else 0. The judge mean scores not-found as 0."
+                )
             continue
         if key not in per_question[0]:
             continue
@@ -163,12 +180,19 @@ def run(rows, retriever, generator, judge, smoke, n_resamples, seed):
         record["latency_ms"] = (time.perf_counter() - started) * 1000
         latencies_ms.append(record["latency_ms"])
         if generator is not None and judge is not None:
-            decided = not_found_score(generated["answer"], row["answer"], passages)
-            if decided is not None:
-                record["judge"] = decided
+            prediction = generated["answer"]
+            # The test questions all have an answer, so "not found" is 0
+            # on the judge that goes in the table. The other column says
+            # whether that refusal matched a retrieval miss.
+            forced = end_to_end_not_found(prediction)
+            if forced is not None:
+                record["judge"] = forced
+                record["retrieval_conditioned_judge"] = not_found_score(
+                    prediction, row["answer"], passages
+                )
             else:
                 try:
-                    record["judge"] = judge(row["question"], passages, row["answer"], generated["answer"])
+                    record["judge"] = judge(row["question"], passages, row["answer"], prediction)
                 except ValueError:
                     record["judge_skipped"] = True
         per_question.append(record)

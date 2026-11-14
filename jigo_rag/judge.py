@@ -15,6 +15,7 @@ case is decided here so a retrieval miss cannot be marked wrong.
 import json
 import os
 import re
+import time
 
 from jigo_rag.config import DEFAULT_GEMINI_MODEL
 
@@ -57,11 +58,25 @@ def format_passages(passages):
     return "\n\n".join(f"[{index}] {text}" for index, text in enumerate(passages, start=1))
 
 
-def not_found_score(prediction, reference, passages):
-    """Score a 'not found' reply from the retrieved passages alone.
+def end_to_end_not_found(prediction):
+    """Return 0.0 when the reply is 'not found', else None.
 
-    Returns 1.0, 0.0, or None. None means the reply is not 'not found'
-    and the model judge should score it.
+    Every question in the test set has an answer, so refusing is wrong
+    on the end-to-end judge. This does not look at retrieval.
+    """
+    from jigo_rag.metrics import normalize
+
+    if normalize(prediction) == "not found":
+        return 0.0
+    return None
+
+
+def not_found_score(prediction, reference, passages):
+    """Retrieval-conditioned score for a 'not found' reply.
+
+    1.0 when the retrieved passages do not contain the reference, 0.0
+    when they do. None when the reply is not 'not found'. This is not
+    the end-to-end judge.
     """
     from jigo_rag.metrics import normalize
     from jigo_rag.qa import answer_supported
@@ -72,14 +87,25 @@ def not_found_score(prediction, reference, passages):
     return 0.0 if supported else 1.0
 
 
+def _retryable(exc):
+    if isinstance(exc, (ValueError, json.JSONDecodeError, OSError, TimeoutError, ConnectionError)):
+        return True
+    message = str(exc).lower()
+    return any(token in message for token in ("timeout", "timed out", "unavailable", "connection", "429", "500", "502", "503"))
+
+
 def judge_with_retries(call, attempts=3):
-    """Call `call` up to `attempts` times. Raise the last parse error."""
+    """Retry parse failures and network errors. Raise the last one."""
     last_error = None
-    for _ in range(attempts):
+    for attempt in range(attempts):
         try:
             return call()
-        except (ValueError, json.JSONDecodeError) as exc:
+        except Exception as exc:
+            if not _retryable(exc):
+                raise
             last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(min(2 ** attempt, 8))
     raise ValueError(f"judge reply could not be parsed: {last_error}") from last_error
 
 

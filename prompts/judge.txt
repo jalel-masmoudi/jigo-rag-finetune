@@ -1,12 +1,11 @@
 Score the system's answer to a handbook question.
 
-You are shown only the passages the system retrieved. Do not assume it saw any other page. The reference answer is the fact that should have been stated if those passages contain it.
+You are shown the passages the system retrieved. The reference answer is the fact the question asks for. Every question in this set has an answer, so a reply of "not found" is wrong.
 
 Score:
 - 1 if the system answer states the same fact as the reference
-- 1 if the system answer is "not found" and the reference fact is not in the retrieved passages
 - 0.5 if the system answer is partly right or leaves out an important part of the reference
-- 0 if the system answer is wrong, or if it says "not found" while the retrieved passages contain the reference fact
+- 0 if the system answer is wrong or says "not found"
 
 Return a JSON object and nothing else: {"score": 0, "reason": "one sentence"}
 The score must be the number 0, 0.5, or 1. Do not use true or false.

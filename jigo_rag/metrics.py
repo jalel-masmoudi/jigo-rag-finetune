@@ -6,9 +6,9 @@ Retrieval
   Rank 1 is the first hit.
 
 Answers
-- Exact match and token F1 use SQuAD normalization: lowercase, strip
-  punctuation, drop the articles a/an/the, collapse whitespace. Letters
-  outside ASCII are kept, so "café" stays "café".
+- Exact match and token F1 use SQuAD normalization: lowercase, delete
+  punctuation (do not replace it with a space), drop a/an/the, collapse
+  whitespace. Letters outside ASCII are kept, so "café" stays "café".
 - Token F1 is the F1 of those tokens. Repeated words count with their
   multiplicity (a multiset), which is the SQuAD token F1.
 
@@ -23,13 +23,20 @@ Uncertainty
 
 import random
 import re
+import string
 from collections import Counter
+
+_PUNCTUATION = set(string.punctuation)
 
 
 def normalize(text):
-    """SQuAD normalization. Unicode letters are kept."""
+    """SQuAD normalization. Punctuation is deleted, not turned into spaces.
+
+    "don't" becomes "dont", "U.S." becomes "us", "A-1" becomes "a1".
+    Letters outside ASCII are kept, so "café" stays "café".
+    """
     text = text.lower()
-    text = "".join(character if character.isalnum() or character.isspace() else " " for character in text)
+    text = "".join(character for character in text if character not in _PUNCTUATION)
     text = re.sub(r"\b(a|an|the)\b", " ", text)
     return " ".join(text.split())
 

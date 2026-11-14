@@ -26,6 +26,11 @@ def test_exact_match_and_token_f1():
     assert exact_match("Hello, World!", "hello world") == 1
     assert exact_match("The cat.", "cat") == 1
     assert token_f1("the cat", "cat") == 1.0
+    assert token_f1("don't", "dont") == 1
+    from jigo_rag.metrics import normalize
+
+    assert normalize("U.S.") == "us"
+    assert normalize("A-1") == "a1"
     # café is a letter, not punctuation, so it survives normalization.
     assert exact_match("Café!", "café") == 1
     assert exact_match("not found", "Concur") == 0
@@ -89,12 +94,31 @@ def test_unparseable_judge_replies_are_retried_then_raised():
     assert calls["n"] == 3
 
 
-def test_not_found_after_a_retrieval_miss_scores_one():
-    from jigo_rag.judge import not_found_score
+def test_network_errors_are_retried():
+    calls = {"n": 0}
 
+    def down():
+        calls["n"] += 1
+        raise TimeoutError("timed out")
+
+    try:
+        judge_with_retries(down, attempts=2)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a network failure was accepted")
+    assert calls["n"] == 2
+
+
+def test_not_found_is_zero_end_to_end_and_separate_if_retrieval_missed():
+    from jigo_rag.judge import end_to_end_not_found, not_found_score
+
+    assert end_to_end_not_found("not found") == 0.0
+    assert end_to_end_not_found("Not found.") == 0.0
+    assert end_to_end_not_found("In Concur.") is None
+    # The retrieval-conditioned column is not the table judge.
     assert not_found_score("not found", "Book travel in Concur.", ["The office is closed."]) == 1.0
     assert not_found_score("Not found.", "Book travel in Concur.", ["Book travel in Concur before the trip."]) == 0.0
-    assert not_found_score("In Concur.", "Book travel in Concur.", ["Book travel in Concur."]) is None
 
 
 def test_latency_does_not_include_the_judge():
