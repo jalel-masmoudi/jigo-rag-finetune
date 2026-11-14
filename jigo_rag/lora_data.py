@@ -15,13 +15,14 @@ The test set is scored later; it is not a source of training context.
 
 The collate function hides prompt tokens with -100. The loss then
 falls only on the answer. A prompt that does not fit drops whole
-non-gold passages, lowest rank first. The gold passage is cut only
-when it alone is still over the cap. The question and the assistant
-header stay whole.
+non-gold passages, lowest rank first. Those passages stay in retrieval
+order, best first, and the gold passage is inserted at one seeded
+index, so the end of the list is the lowest rank. The gold passage is
+cut only when it alone is still over the cap. The question and the
+assistant header stay whole.
 """
 
 import random
-import re
 
 from jigo_rag.generator import NOT_FOUND, build_messages, format_context
 
@@ -39,7 +40,10 @@ def contexts_for_row(row, hits, train_corpus, k=5, seed=42):
     """Return (answer_passages, not_found_passages).
 
     Both lists contain only text from `train_corpus`, except the gold
-    chunk text, which is inserted into the answerable list.
+    chunk text. The other passages stay in retrieval rank order, best
+    first. The gold text is inserted at one seeded index so it is not
+    always first. Dropping from the end of that list drops the
+    lowest-ranked non-gold passage.
     """
     train_ids = {chunk["chunk_id"] for chunk in train_corpus}
     usable = [hit for hit in hits if hit["chunk_id"] in train_ids and hit["chunk_id"] != row["gold_chunk_id"]]
@@ -57,9 +61,10 @@ def contexts_for_row(row, hits, train_corpus, k=5, seed=42):
             others.append(chunk["text"])
             if len(others) == k - 1:
                 break
-    answer_passages = [row["chunk_text"]] + others
-    # The gold passage is not always first. The position is fixed for a seed.
-    random.Random(f"{seed}:{row.get('gold_chunk_id', row['doc_id'])}").shuffle(answer_passages)
+    # Rank order of the non-gold passages is the retrieval order. The
+    # gold text is inserted at one index; it is not shuffled in with them.
+    position = random.Random(f"{seed}:{row.get('gold_chunk_id', row['doc_id'])}").randrange(len(others) + 1)
+    answer_passages = others[:position] + [row["chunk_text"]] + others[position:]
     not_found = list(others)
     if len(not_found) < k:
         for chunk in train_corpus:
@@ -112,35 +117,20 @@ def _as_ids(tokenizer, text):
 _QUESTION_MARK = "\n\nQuestion: "
 
 
-def _passages_from_context(context):
-    """Split a formatted context back into passage strings.
-
-    Numbered blocks are separated by a blank line. The question is
-    already removed by the caller.
-    """
-    body = context[len("Context:\n") :] if context.startswith("Context:\n") else context
-    if not body.strip():
-        return []
-    passages = []
-    for part in re.split(r"\n\n(?=\[\d+\] )", body):
-        match = re.match(r"\[\d+\] (.*)\Z", part, re.S)
-        passages.append(match.group(1) if match else part)
-    return passages
-
-
 def _fit_messages(tokenizer, messages, max_length, passages=None, gold=None):
     """Make the chat string fit by dropping passages, then cutting gold.
 
-    Non-gold passages are removed whole, lowest rank first. Rank is the
-    order in the list: the last passage is the lowest. The gold passage
-    stays intact unless it, with the question and the assistant header,
-    is still over the cap. The question itself is not cut.
+    Non-gold passages are removed whole, lowest rank first. The list is
+    retrieval order, best first, with the gold passage inserted, so the
+    last non-gold passage is the lowest rank. The gold passage stays
+    intact unless it, with the question and the assistant header, is
+    still over the cap. The question itself is not cut. The passage
+    list is the one the caller built. It is not parsed back out of the
+    prompt.
     """
-    if len(messages) < 2 or _QUESTION_MARK not in messages[1]["content"]:
+    if passages is None or len(messages) < 2 or _QUESTION_MARK not in messages[1]["content"]:
         return messages
-    context, question = messages[1]["content"].rsplit(_QUESTION_MARK, 1)
-    if passages is None:
-        passages = _passages_from_context(context)
+    question = messages[1]["content"].rsplit(_QUESTION_MARK, 1)[1]
 
     def assemble(kept):
         user = f"Context:\n{format_context(kept)}{_QUESTION_MARK}{question}"

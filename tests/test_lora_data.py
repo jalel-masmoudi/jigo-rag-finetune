@@ -30,7 +30,7 @@ def test_not_found_context_is_train_only_and_excludes_the_gold_chunk():
         {"chunk_id": "val-y#0", "doc_id": "val-y", "text": "A validation page."},
     ]
     answer, refused = contexts_for_row(_row(), hits, _train_corpus(), k=2)
-    assert answer[0] == "Book travel in Concur."
+    assert "Book travel in Concur." in answer
     assert "A held-out page." not in answer
     assert "A validation page." not in answer
     assert "A held-out page." not in refused
@@ -94,6 +94,60 @@ def test_gold_passage_position_depends_on_the_seed():
     assert first[0] == second[0]
 
 
+def test_non_gold_passages_stay_in_rank_order_and_clipping_drops_the_lowest():
+    gold = " ".join(f"goldword{index}" for index in range(8))
+    rank = [
+        " ".join(f"rank1w{index}" for index in range(8)),
+        " ".join(f"rank2w{index}" for index in range(8)),
+        " ".join(f"rank3w{index}" for index in range(8)),
+    ]
+    row = _row()
+    row["chunk_text"] = gold
+    hits = [
+        {"chunk_id": "train-b#0", "doc_id": "train-b", "text": rank[0]},
+        {"chunk_id": "train-c#0", "doc_id": "train-c", "text": rank[1]},
+        {"chunk_id": "train-d#0", "doc_id": "train-d", "text": rank[2]},
+    ]
+    corpus = [
+        {"chunk_id": "train-a#0", "doc_id": "train-a", "text": gold, "split": "train"},
+        {"chunk_id": "train-b#0", "doc_id": "train-b", "text": rank[0], "split": "train"},
+        {"chunk_id": "train-c#0", "doc_id": "train-c", "text": rank[1], "split": "train"},
+        {"chunk_id": "train-d#0", "doc_id": "train-d", "text": rank[2], "split": "train"},
+    ]
+    answer, _refused = contexts_for_row(row, hits, corpus, k=4, seed=3)
+    assert [text for text in answer if text != gold] == rank
+    tokenizer = _Tokenizer()
+    without_lowest = [text for text in answer if text != rank[-1]]
+    cap = int(
+        collate_for_training(
+            [
+                {
+                    "messages": with_answer(row["question"], without_lowest, row["answer"]),
+                    "passages": without_lowest,
+                    "gold_passage": gold,
+                }
+            ],
+            tokenizer,
+            max_length=10000,
+        )["input_ids"].shape[-1]
+    )
+    batch = collate_for_training(
+        [
+            {
+                "messages": with_answer(row["question"], answer, row["answer"]),
+                "passages": answer,
+                "gold_passage": gold,
+            }
+        ],
+        tokenizer,
+        max_length=cap,
+    )
+    text = tokenizer.decode(token for token in batch["input_ids"][0].tolist() if token)
+    assert "rank3w0" not in text.split()
+    assert "rank1w0" in text.split()
+    assert "goldword0" in text.split()
+
+
 def test_loss_log_and_seed(tmp_path):
     import torch
     from train_lora import append_loss, set_training_seed, start_loss_log
@@ -152,7 +206,10 @@ def test_collate_drops_non_gold_passages_before_cutting_the_gold():
 
 def test_collate_clips_passages_and_keeps_the_question():
     passage = " ".join(f"passage{index}" for index in range(80))
-    example = {"messages": with_answer("UNIQUE_QUESTION", [passage], "SHORT_ANSWER")}
+    example = {
+        "messages": with_answer("UNIQUE_QUESTION", [passage], "SHORT_ANSWER"),
+        "passages": [passage],
+    }
     tokenizer = _Tokenizer()
     batch = collate_for_training([example], tokenizer, max_length=40)
     ids = [token for token in batch["input_ids"][0].tolist() if token != 0]
@@ -182,7 +239,10 @@ def test_real_qwen_tokenizer_collates_committed_top5_examples():
     assert len(rows) == 5
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
     examples = [
-        {"messages": with_answer(row["question"], row["passages"], row["answer"])}
+        {
+            "messages": with_answer(row["question"], row["passages"], row["answer"]),
+            "passages": row["passages"],
+        }
         for row in rows
     ]
     batch = collate_for_training(examples, tokenizer)
