@@ -1,3 +1,8 @@
 transformers==5.23.0
 google-genai==3.3.0
 pytest==9.2.0
+# CPU build. If pip cannot see it, add --index-url https://download.pytorch.org/whl/cpu
+torch==2.15.0+cpu
+sentence-transformers==6.3.0
+faiss-cpu==1.16.0
+numpy==2.5.4
