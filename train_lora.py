@@ -129,6 +129,38 @@ def check_data():
     return examples
 
 
+def set_training_seed(seed):
+    """Seed Python, NumPy, and torch the way the Trainer does."""
+    from transformers import set_seed
+
+    set_seed(seed)
+
+
+def start_loss_log(seed, directory="results"):
+    """Write the run config and an empty loss CSV. Returns the CSV path."""
+    from pathlib import Path
+
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    config = {
+        "seed": seed,
+        "r": LORA_R,
+        "lora_alpha": LORA_ALPHA,
+        "target_modules": TARGET_MODULES,
+        "model": GENERATOR_MODEL,
+        "max_length": 3072,
+    }
+    (directory / "lora_config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    csv_path = directory / "lora_loss.csv"
+    csv_path.write_text("step,loss,seed\n", encoding="utf-8")
+    return csv_path
+
+
+def append_loss(csv_path, step, loss, seed):
+    with open(csv_path, "a", encoding="utf-8") as handle:
+        handle.write(f"{step},{loss},{seed}\n")
+
+
 def train():
     import torch
 
@@ -142,6 +174,8 @@ def train():
     from torch.utils.data import DataLoader
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    set_training_seed(SEED)
+    loss_csv = start_loss_log(SEED)
     rows, corpus = load_training_rows()
     if rows[0]["doc_id"].startswith("demo/"):
         raise SystemExit("Refusing to train on the demo example. Run generate_qa.py first.")
@@ -172,6 +206,7 @@ def train():
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+            append_loss(loss_csv, step, f"{loss.item():.6f}", SEED)
             if step % 20 == 0:
                 print(f"epoch {epoch} step {step} loss {loss.item():.4f}")
     model.save_pretrained("models/lora")

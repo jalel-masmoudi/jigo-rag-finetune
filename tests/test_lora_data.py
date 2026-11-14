@@ -47,7 +47,9 @@ def test_not_found_context_is_train_only_and_excludes_the_gold_chunk():
 
 
 class _Tokenizer:
-    """Splits on spaces and pads with zeros. Enough to see the mask."""
+    """Splits on spaces. Enough to see which tokens are masked."""
+
+    pad_token_id = 0
 
     def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
         text = " ".join(message["content"] for message in messages)
@@ -55,17 +57,72 @@ class _Tokenizer:
             text += " ASSIST"
         return text
 
-    def __call__(self, text, return_tensors=None, padding=False, truncation=False, max_length=None):
-        if isinstance(text, str):
-            return {"input_ids": text.split()}
-        rows = [item.split() for item in text]
-        width = max(len(row) for row in rows)
-        ids = []
-        mask = []
-        for row in rows:
-            ids.append([hash(token) % 1000 + 1 for token in row] + [0] * (width - len(row)))
-            mask.append([1] * len(row) + [0] * (width - len(row)))
-        return {"input_ids": torch.tensor(ids), "attention_mask": torch.tensor(mask)}
+    def __call__(self, text, add_special_tokens=False, **kwargs):
+        return {"input_ids": [abs(hash(token)) % 1000 + 1 for token in text.split()]}
+
+
+def test_gold_passage_position_depends_on_the_seed():
+    hits = [
+        {"chunk_id": "train-b#0", "doc_id": "train-b", "text": "Leave is requested separately."},
+        {"chunk_id": "train-c#0", "doc_id": "train-c", "text": "Badges are issued at the desk."},
+    ]
+    positions = set()
+    for seed in range(12):
+        answer, _refused = contexts_for_row(_row(), hits, _train_corpus(), k=3, seed=seed)
+        positions.add(answer.index("Book travel in Concur."))
+    assert len(positions) > 1
+    first = contexts_for_row(_row(), hits, _train_corpus(), k=3, seed=4)
+    second = contexts_for_row(_row(), hits, _train_corpus(), k=3, seed=4)
+    assert first[0] == second[0]
+
+
+def test_loss_log_and_seed(tmp_path):
+    import torch
+    from train_lora import append_loss, set_training_seed, start_loss_log
+
+    set_training_seed(7)
+    first = torch.rand(2).tolist()
+    set_training_seed(7)
+    assert torch.rand(2).tolist() == first
+    csv_path = start_loss_log(7, directory=tmp_path)
+    append_loss(csv_path, 1, "0.500000", 7)
+    assert "1,0.500000,7" in csv_path.read_text(encoding="utf-8")
+    config = __import__("json").loads((tmp_path / "lora_config.json").read_text(encoding="utf-8"))
+    assert config["seed"] == 7 and config["r"] == 16 and config["lora_alpha"] == 32
+
+
+def test_real_qwen_tokenizer_collates_long_passages():
+    from pathlib import Path
+
+    from transformers import AutoTokenizer
+
+    from jigo_rag.jsonl import read_jsonl
+    from jigo_rag.lora_data import collate_for_training, with_answer
+
+    texts = []
+    for split in ("train", "val", "test"):
+        chunk_path = Path("data/chunks") / f"{split}.jsonl"
+        if chunk_path.exists():
+            for row in read_jsonl(chunk_path):
+                if row.get("n_tokens", 0) >= 400:
+                    texts.append(row["text"])
+                if len(texts) >= 5:
+                    break
+        if len(texts) >= 5:
+            break
+    if len(texts) < 5:
+        for split in ("train", "val", "test"):
+            for row in read_jsonl(Path("data/sample") / f"{split}.jsonl"):
+                texts.append(row["chunk_text"])
+                if len(texts) >= 5:
+                    break
+    while len(texts) < 5:
+        texts.append(texts[-1])
+    example = {"messages": with_answer("Where is travel booked?", texts[:5], "In Concur.")}
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
+    batch = collate_for_training([example], tokenizer)
+    assert int(batch["input_ids"].shape[-1]) <= 3072
+    assert any(token != -100 for token in batch["labels"][0].tolist())
 
 
 def test_collate_masks_the_prompt_and_keeps_the_answer():
