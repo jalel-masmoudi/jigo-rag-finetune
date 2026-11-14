@@ -57,20 +57,22 @@ Kept: 234 handbook pages + 9 Jigo docs = **243 documents**. Dropped: 7 empty + 1
 
 ## Split
 
-Documents are shuffled with `random.Random(42)` after sorting the ids, then cut into 70% train, 10% validation, 20% test. The fractions are of **documents**, not of chunks. Rounding on this corpus gives:
+Documents are shuffled with `random.Random(42)` after sorting the ids, then cut into 70% train, 10% validation, 20% test. The fractions are of **documents**, not of chunks. The cut is done **inside each source**. The Jigo set is nine documents. Mixed into the handbook and then cut 70/10/20, validation can round to zero Jigo documents. Splitting Jigo on its own puts one Jigo document in validation and two in test (`round(9 × 0.10) = 1`, `round(9 × 0.20) = 2`). A source with fewer than about five documents can still round to an empty validation slice; this one does not.
 
-| Split | Documents | Chunks |
-| --- | ---: | ---: |
-| train | 170 | 519 |
-| val | 24 | 81 |
-| test | 49 | 175 |
-| total | 243 | 775 |
+Rounding on this corpus gives:
+
+| Split | Documents | Of which Jigo | Chunks |
+| --- | ---: | ---: | ---: |
+| train | 170 | 6 | 535 |
+| val | 24 | 1 | 75 |
+| test | 49 | 2 | 165 |
+| total | 243 | 9 | 775 |
 
 `make_data.py` asserts that no `doc_id` appears in two splits, and the tests check the same rule.
 
 Why not split by chunk: neighboring windows of one page share 64 tokens and usually the same facts. If one window is in train and the next is in test, a model can memorize the page and score well on a question it has essentially already seen. Keeping every chunk of a document in one split blocks that leak. The retrieval index at evaluation time still contains every chunk. The split only decides which documents may be used to train.
 
-The test split has 175 chunks. The question generator asks for at most 4 questions per chunk, and for this count it asks for 3 (`ceil(360 / 175) = 3`). 175 × 3 = 525, which is more than the 360 test questions, so 70/10/20 already leaves enough test material for a 300–400 question review set. The fractions were not changed after the count.
+The test split has 165 chunks. The question generator asks for at most 4 questions per chunk, and for this count it asks for 3 (`ceil(360 / 165) = 3`). 165 × 3 = 495, which is more than the 360 test questions, so 70/10/20 already leaves enough test material for a 300–400 question review set. The fractions were not changed after the count.
 
 ## Synthetic questions
 
@@ -88,7 +90,7 @@ This workspace did not have a `GEMINI_API_KEY`, so that script has not been run.
 
 `review_test.py` shows one test row at a time. `k` keeps it, `f` lets you replace the question or the answer, `d` drops it, `q` stops. Kept and fixed rows are appended to `data/test_reviewed.jsonl`. Dropped rows are appended to `data/test_dropped.jsonl` so they are not shown again. Progress is saved after each row.
 
-**Only `data/test_reviewed.jsonl` is the test set.** `data/test.jsonl` is raw model output and must not be used for a score. The reviewed file is not gitignored, so it can be committed after the review. The raw generated files and the cloned corpora are gitignored.
+**Only `data/test_reviewed.jsonl` is the test set.** `data/test.jsonl` is raw model output and must not be used for a score. The reviewed file is gitignored, same as the other full generated files, because it is produced on your machine and can be large. `eval.py` reads it from disk. When you want that exact reviewed set in git, add it with `git add -f data/test_reviewed.jsonl`. The raw generated files and the cloned corpora are gitignored.
 
 ## How to rebuild
 
@@ -101,6 +103,6 @@ cp .env.example .env   # then put the key in .env; do not commit it
 .venv/bin/python review_test.py
 ```
 
-`make_data.py` clones into `data/raw/` and writes `data/chunks/{train,val,test}.jsonl` plus `data/stats.json`. The same seed (42) and the same pinned commits reproduce the split. Question text depends on the model, so a second Gemini run is not guaranteed to match the first word for word. The script is resumable so you do not have to throw a partial file away.
+`make_data.py` clones into `data/raw/` (or `--raw`) and writes `{train,val,test}.jsonl` plus `stats.json` into `--out` (default `data/chunks`). The same seed (42) and the same pinned commits reproduce the split. Question text depends on the model, so a second Gemini run is not guaranteed to match the first word for word. The script is resumable so you do not have to throw a partial file away.
 
 `pytest` checks window size and overlap, that the split does not change with the seed, that a document cannot land in two splits, and that the JSONL rows have the fields the later scripts read.

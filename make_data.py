@@ -76,8 +76,12 @@ def build(raw_root, out_dir, seed):
         "chunks_per_split": chunks_per_split,
         "qa_plan": qa_plan,
     }
-    stats_path = Path("data/stats.json")
-    stats_path.parent.mkdir(parents=True, exist_ok=True)
+    by_source = {}
+    for doc_id, split_name in mapping.items():
+        by_source.setdefault(split_name, Counter())[doc_id.split("/", 1)[0]] += 1
+    stats["docs_per_split_by_source"] = {name: dict(counts) for name, counts in by_source.items()}
+    # Stats sit next to the chunk files so --out is the only output path.
+    stats_path = out_dir / "stats.json"
     stats_path.write_text(json.dumps(stats, indent=2) + "\n", encoding="utf-8")
     return stats
 
@@ -93,6 +97,7 @@ def print_stats(stats):
         f"{stats['drop_reasons']}"
     )
     print(f"docs per split {stats['docs_per_split']}")
+    print(f"docs per split by source {stats['docs_per_split_by_source']}")
     print(f"chunks per split {stats['chunks_per_split']}")
     for split, plan in stats["qa_plan"].items():
         flag = "ok" if plan["enough_chunks"] else "SHORT"

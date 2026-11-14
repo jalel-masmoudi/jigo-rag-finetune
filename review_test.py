@@ -50,6 +50,8 @@ def pending_rows():
     rows = read_jsonl(TEST_PATH)
     seen = set()
     for path in (KEPT_PATH, DROPPED_PATH):
+        if not path.exists():
+            continue
         for row in read_jsonl(path):
             seen.add(row["row_id"])
     return [row for row in rows if row["row_id"] not in seen]

@@ -8,6 +8,13 @@ every chunk of a document in one split blocks that leak.
 
 The lists are built from a sorted id list shuffled with `random.Random(seed)`,
 so the same documents and the same seed always give the same split.
+
+The split is done separately inside each source (the part of the doc id
+before the first slash). The Jigo set is only nine documents. If those
+nine were mixed with the handbook and then cut 70/10/20, validation can
+easily get none of them. Cutting each source on its own keeps the same
+fractions and, for nine Jigo documents, puts one of them in validation
+and two in test.
 """
 
 import random
@@ -42,9 +49,33 @@ def split_doc_ids(
     return train_ids, val_ids, test_ids
 
 
+def source_of(doc_id):
+    """The corpus name is the first path segment of the doc id."""
+    return doc_id.split("/", 1)[0]
+
+
+def split_doc_ids_stratified(doc_ids, **kwargs):
+    """Split each source with `split_doc_ids`, then combine the lists.
+
+    A source with only a few documents can round to an empty validation
+    slice (10% of 4 is 0). Nine documents round to one validation
+    document, which is why the Jigo docs are split on their own.
+    """
+    groups = {}
+    for doc_id in doc_ids:
+        groups.setdefault(source_of(doc_id), []).append(doc_id)
+    train_ids, val_ids, test_ids = [], [], []
+    for source in sorted(groups):
+        train_part, val_part, test_part = split_doc_ids(groups[source], **kwargs)
+        train_ids.extend(train_part)
+        val_ids.extend(val_part)
+        test_ids.extend(test_part)
+    return train_ids, val_ids, test_ids
+
+
 def assign_splits(doc_ids, **kwargs):
     """Map each doc_id to 'train', 'val', or 'test'."""
-    train_ids, val_ids, test_ids = split_doc_ids(doc_ids, **kwargs)
+    train_ids, val_ids, test_ids = split_doc_ids_stratified(doc_ids, **kwargs)
     mapping = {}
     for doc_id in train_ids:
         mapping[doc_id] = "train"

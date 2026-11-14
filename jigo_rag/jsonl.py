@@ -8,9 +8,13 @@ from pathlib import Path
 
 
 def read_jsonl(path):
+    """Read JSONL. A missing file is an error, not an empty list.
+
+    Callers that treat a file as optional check `Path.exists` first.
+    """
     path = Path(path)
     if not path.exists():
-        return []
+        raise FileNotFoundError(path)
     rows = []
     with path.open(encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):

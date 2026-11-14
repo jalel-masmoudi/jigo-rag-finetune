@@ -109,7 +109,7 @@ def generate_split(client, model, template, split, sleep_seconds):
             f"{QA_MAX_PER_CHUNK} questions each cannot reach {target}",
             file=sys.stderr,
         )
-    existing = read_jsonl(out_path)
+    existing = read_jsonl(out_path) if out_path.exists() else []
     done = {row["gold_chunk_id"] for row in existing}
     written = len(existing)
     print(f"{split}: {written} rows already on disk, target {target}, {per_chunk} per chunk")

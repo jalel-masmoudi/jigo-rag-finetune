@@ -1,6 +1,11 @@
 """The document split is deterministic and does not leak a document."""
 
-from jigo_rag.split import assert_no_doc_leakage, assign_splits, split_doc_ids
+from jigo_rag.split import (
+    assert_no_doc_leakage,
+    assign_splits,
+    split_doc_ids,
+    split_doc_ids_stratified,
+)
 
 
 def test_split_is_deterministic_and_exhaustive():
@@ -18,6 +23,19 @@ def test_split_is_deterministic_and_exhaustive():
     assert len(test_ids) == 20
     assert len(val_ids) == 10
     assert len(train_ids) == 70
+
+
+def test_each_source_is_split_on_its_own():
+    # Nine documents is enough for 10% to round to one validation doc.
+    jigo = [f"jigo/doc-{i}.md" for i in range(9)]
+    handbook = [f"gsa-handbook/page-{i}.md" for i in range(40)]
+    train_ids, val_ids, test_ids = split_doc_ids_stratified(jigo + handbook, seed=42)
+    assert any(doc_id.startswith("jigo/") for doc_id in val_ids)
+    assert any(doc_id.startswith("jigo/") for doc_id in test_ids)
+    assert set(train_ids).isdisjoint(val_ids)
+    assert set(train_ids).isdisjoint(test_ids)
+    assert set(val_ids).isdisjoint(test_ids)
+    assert set(train_ids) | set(val_ids) | set(test_ids) == set(jigo + handbook)
 
 
 def test_chunk_rows_cannot_put_one_doc_in_two_splits():

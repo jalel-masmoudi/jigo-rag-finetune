@@ -37,6 +37,15 @@ def _qa(**overrides):
     return row
 
 
+def test_missing_jsonl_raises(tmp_path):
+    missing = tmp_path / "nope.jsonl"
+    try:
+        read_jsonl(missing)
+    except FileNotFoundError:
+        return
+    raise AssertionError("a missing jsonl file was treated as empty")
+
+
 def test_valid_rows_round_trip(tmp_path):
     path = tmp_path / "rows.jsonl"
     write_jsonl(path, [validate_chunk(_chunk()), validate_qa(_qa())])
