@@ -32,6 +32,7 @@ from jigo_rag.judge import (
     end_to_end_not_found,
     format_passages,
     judge_available,
+    judge_failure_skips,
     judge_one,
     judge_with_retries,
     not_found_score,
@@ -193,7 +194,9 @@ def run(rows, retriever, generator, judge, smoke, n_resamples, seed):
             else:
                 try:
                     record["judge"] = judge(row["question"], passages, row["answer"], prediction)
-                except ValueError:
+                except Exception as exc:
+                    if not judge_failure_skips(exc):
+                        raise
                     record["judge_skipped"] = True
         per_question.append(record)
     summary = summarize(per_question, n_resamples, seed)
@@ -214,6 +217,7 @@ def _make_judge():
     """The Gemini judge, or None when the key is missing.
 
     One function, so main does not define `judge` a second time.
+    This is the only place that reads .env.
     """
     from generate_qa import load_dotenv
 
@@ -261,11 +265,6 @@ def main():
         output = Path(args.output or "results/baseline.json")
 
     generator = None if args.retrieval_only else QwenGenerator()
-    # Load .env before checking the key, or a key that lives only in
-    # .env looks missing.
-    from generate_qa import load_dotenv
-
-    load_dotenv()
     judge = _make_judge() if generator is not None else None
 
     summary = run(rows, retriever, generator, judge, smoke=args.smoke, n_resamples=args.bootstrap, seed=args.seed)

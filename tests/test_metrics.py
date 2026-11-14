@@ -88,11 +88,13 @@ def test_unparseable_judge_replies_are_not_retried():
 
     try:
         judge_with_retries(bad, attempts=3)
-    except ValueError:
-        pass
+    except ValueError as exc:
+        message = str(exc)
     else:
         raise AssertionError("a bad judge reply was accepted")
     assert calls["n"] == 1
+    assert "could not be parsed" in message
+    assert "judge request failed" not in message
 
 
 def test_permission_errors_are_not_retried():
@@ -122,11 +124,13 @@ def test_http_server_errors_are_retried():
 
     try:
         judge_with_retries(down, attempts=2)
-    except ValueError:
-        pass
+    except ValueError as exc:
+        message = str(exc)
     else:
         raise AssertionError("an HTTP 503 was accepted")
     assert calls["n"] == 2
+    assert "judge request failed" in message
+    assert "could not be parsed" not in message
 
 
 def test_network_errors_are_retried():
@@ -138,11 +142,78 @@ def test_network_errors_are_retried():
 
     try:
         judge_with_retries(down, attempts=2)
-    except ValueError:
-        pass
+    except ValueError as exc:
+        message = str(exc)
     else:
         raise AssertionError("a network failure was accepted")
     assert calls["n"] == 2
+    assert "judge request failed" in message
+    assert "could not be parsed" not in message
+
+
+def test_rate_limit_then_success_returns_the_score(monkeypatch):
+    from google.genai.errors import ClientError
+
+    slept = []
+    monkeypatch.setattr("jigo_rag.judge.time.sleep", lambda seconds: slept.append(seconds))
+    calls = {"n": 0}
+
+    def call():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            response = type("Response", (), {"headers": {"Retry-After": "7"}, "status_code": 429})()
+            raise ClientError(429, {"error": {"message": "rate limit"}}, response)
+        return 1.0
+
+    assert judge_with_retries(call, attempts=3) == 1.0
+    assert calls["n"] == 2
+    assert slept == [7.0]
+
+
+def test_persistent_rate_limit_skips_the_judge_and_the_loop_continues(monkeypatch):
+    from google.genai.errors import ClientError
+
+    from eval import run
+
+    monkeypatch.setattr("jigo_rag.judge.time.sleep", lambda seconds: None)
+    seen = {"n": 0}
+
+    def judge(question, passages, reference, prediction):
+        seen["n"] += 1
+
+        def call():
+            if seen["n"] == 1:
+                raise ClientError(429, {"error": {"message": "rate limit"}}, None)
+            return 1.0
+
+        return judge_with_retries(call, attempts=2)
+
+    class Retriever:
+        chunks = [None, None]
+
+        def search(self, query, k=10):
+            return [{"chunk_id": "doc#0", "text": "Book travel in Concur.", "doc_id": "doc"}]
+
+    class Generator:
+        def answer(self, question, passages, max_new_tokens=128):
+            return {"answer": "In Concur.", "prompt_tokens": 1, "completion_tokens": 1}
+
+    summary = run(
+        [
+            {"question": "Where?", "answer": "In Concur.", "gold_chunk_id": "doc#0"},
+            {"question": "Also?", "answer": "In Concur.", "gold_chunk_id": "doc#0"},
+        ],
+        Retriever(),
+        Generator(),
+        judge,
+        smoke=True,
+        n_resamples=10,
+        seed=1,
+    )
+    assert summary["n"] == 2
+    assert summary["judge"]["skipped"] == 1
+    assert summary["judge"]["mean"] == 1.0
+    assert seen["n"] == 2
 
 
 def test_not_found_is_zero_end_to_end_and_separate_if_retrieval_missed():

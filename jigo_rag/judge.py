@@ -115,11 +115,19 @@ def _status_code(exc):
     return None
 
 
+_GEMINI_API_ERRORS = {"APIError", "ClientError", "ServerError"}
+
+
+def _gemini_api_error(exc):
+    return any(cls.__name__ in _GEMINI_API_ERRORS for cls in type(exc).__mro__)
+
+
 def _retryable(exc):
-    """Network failures and HTTP 5xx only.
+    """Network failures, HTTP 429, and HTTP 5xx.
 
     PermissionError is an OSError, and a reply that merely contains the
-    digits 500 is not an HTTP error. Neither is retried.
+    digits 500 is not an HTTP error. Neither is retried. A 429 is, because
+    the free-tier judge is rate limited.
     """
     if isinstance(exc, PermissionError):
         return False
@@ -128,22 +136,55 @@ def _retryable(exc):
     if any(cls.__name__ in _NETWORK_TYPES for cls in type(exc).__mro__):
         return True
     status = _status_code(exc)
+    if status == 429:
+        return True
     return status is not None and 500 <= status <= 599
 
 
+def _retry_delay(exc, attempt):
+    """Seconds to wait. Retry-After wins when the server sends a number."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    raw = None
+    if headers is not None and hasattr(headers, "get"):
+        raw = headers.get("Retry-After")
+        if raw is None:
+            raw = headers.get("retry-after")
+    if raw is not None:
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            pass
+    return float(min(2 ** attempt, 8))
+
+
+def judge_failure_skips(exc):
+    """A parse failure or a Gemini API error is recorded, not fatal."""
+    return isinstance(exc, ValueError) or _gemini_api_error(exc)
+
+
 def judge_with_retries(call, attempts=3):
-    """Retry network and HTTP 5xx errors. Raise the last one."""
+    """Retry network errors, HTTP 429, and HTTP 5xx.
+
+    A bad JSON reply is a parse failure. A rate limit or a dropped
+    connection is a request failure. The two messages stay different so
+    a log can tell them apart.
+    """
     last_error = None
     for attempt in range(attempts):
         try:
             return call()
+        except ValueError as exc:
+            raise ValueError(f"judge reply could not be parsed: {exc}") from exc
         except Exception as exc:
             if not _retryable(exc):
+                if _gemini_api_error(exc):
+                    raise ValueError(f"judge request failed: {exc}") from exc
                 raise
             last_error = exc
             if attempt + 1 < attempts:
-                time.sleep(min(2 ** attempt, 8))
-    raise ValueError(f"judge reply could not be parsed: {last_error}") from last_error
+                time.sleep(_retry_delay(exc, attempt))
+    raise ValueError(f"judge request failed: {last_error}") from last_error
 
 
 def judge_available():
