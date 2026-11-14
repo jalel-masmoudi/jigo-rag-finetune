@@ -14,13 +14,16 @@ is ignored, so a validation or test chunk cannot become context.
 The test set is scored later; it is not a source of training context.
 
 The collate function hides prompt tokens with -100. The loss then
-falls only on the answer. A prompt that does not fit is shortened by
-cutting the passages. The question and the assistant header stay whole.
+falls only on the answer. A prompt that does not fit drops whole
+non-gold passages, lowest rank first. The gold passage is cut only
+when it alone is still over the cap. The question and the assistant
+header stay whole.
 """
 
 import random
+import re
 
-from jigo_rag.generator import NOT_FOUND, build_messages
+from jigo_rag.generator import NOT_FOUND, build_messages, format_context
 
 MAX_TRAIN_LENGTH = 3072
 
@@ -85,6 +88,8 @@ def build_examples(rows, train_corpus, search, k=5, seed=42):
                 "messages": with_answer(row["question"], answer_passages, row["answer"]),
                 "kind": "answer",
                 "doc_id": row["doc_id"],
+                "passages": answer_passages,
+                "gold_passage": row["chunk_text"],
             }
         )
         examples.append(
@@ -92,6 +97,8 @@ def build_examples(rows, train_corpus, search, k=5, seed=42):
                 "messages": with_answer(row["question"], not_found_passages, NOT_FOUND),
                 "kind": "not_found",
                 "doc_id": row["doc_id"],
+                "passages": not_found_passages,
+                "gold_passage": None,
             }
         )
     return examples
@@ -105,40 +112,87 @@ def _as_ids(tokenizer, text):
 _QUESTION_MARK = "\n\nQuestion: "
 
 
-def _fit_messages(tokenizer, messages, max_length):
-    """Cut passage text until the chat string fits.
+def _passages_from_context(context):
+    """Split a formatted context back into passage strings.
 
-    The user message ends with the question. That suffix, and the
-    assistant header the chat template adds after it, are not cut.
+    Numbered blocks are separated by a blank line. The question is
+    already removed by the caller.
+    """
+    body = context[len("Context:\n") :] if context.startswith("Context:\n") else context
+    if not body.strip():
+        return []
+    passages = []
+    for part in re.split(r"\n\n(?=\[\d+\] )", body):
+        match = re.match(r"\[\d+\] (.*)\Z", part, re.S)
+        passages.append(match.group(1) if match else part)
+    return passages
+
+
+def _fit_messages(tokenizer, messages, max_length, passages=None, gold=None):
+    """Make the chat string fit by dropping passages, then cutting gold.
+
+    Non-gold passages are removed whole, lowest rank first. Rank is the
+    order in the list: the last passage is the lowest. The gold passage
+    stays intact unless it, with the question and the assistant header,
+    is still over the cap. The question itself is not cut.
     """
     if len(messages) < 2 or _QUESTION_MARK not in messages[1]["content"]:
         return messages
     context, question = messages[1]["content"].rsplit(_QUESTION_MARK, 1)
+    if passages is None:
+        passages = _passages_from_context(context)
 
-    def assemble(context_text):
+    def assemble(kept):
+        user = f"Context:\n{format_context(kept)}{_QUESTION_MARK}{question}"
         return [
             messages[0],
-            {"role": "user", "content": f"{context_text}{_QUESTION_MARK}{question}"},
+            {"role": "user", "content": user},
             *messages[2:],
         ]
 
-    def fits(context_text):
-        full = tokenizer.apply_chat_template(assemble(context_text), tokenize=False)
+    def fits(kept):
+        full = tokenizer.apply_chat_template(assemble(kept), tokenize=False)
         return len(_as_ids(tokenizer, full)) <= max_length
 
-    if fits(context):
-        return assemble(context)
-    # Keep a prefix of the passage block. The question sits after it.
-    lo, hi = 0, len(context)
+    items = []
+    gold_marked = False
+    for text in passages:
+        is_gold = gold is not None and not gold_marked and text == gold
+        if is_gold:
+            gold_marked = True
+        items.append({"text": text, "gold": is_gold})
+
+    def kept_texts():
+        return [item["text"] for item in items]
+
+    while items and not fits(kept_texts()):
+        drop_at = None
+        for index in range(len(items) - 1, -1, -1):
+            if not items[index]["gold"]:
+                drop_at = index
+                break
+        if drop_at is None:
+            break
+        del items[drop_at]
+
+    if fits(kept_texts()) or not any(item["gold"] for item in items):
+        return assemble(kept_texts())
+
+    # The gold passage alone is over the cap. Shorten that text only.
+    gold_item = next(item for item in items if item["gold"])
+    original = gold_item["text"]
+    lo, hi = 0, len(original)
     best = 0
     while lo <= hi:
         mid = (lo + hi) // 2
-        if fits(context[:mid]):
+        gold_item["text"] = original[:mid]
+        if fits(kept_texts()):
             best = mid
             lo = mid + 1
         else:
             hi = mid - 1
-    return assemble(context[:best])
+    gold_item["text"] = original[:best]
+    return assemble(kept_texts())
 
 
 def collate_for_training(batch_examples, tokenizer, max_length=MAX_TRAIN_LENGTH):
@@ -146,15 +200,23 @@ def collate_for_training(batch_examples, tokenizer, max_length=MAX_TRAIN_LENGTH)
 
     The cap is 3072 Qwen tokens. Five retrieved passages are often
     longer than 1024, which used to cut off the question and then mask
-    the whole row. Passages are shortened instead, so the question and
-    the assistant header stay in the window. Padding positions are masked too.
+    the whole row. Whole non-gold passages are dropped first, lowest
+    rank first. The gold passage is cut only if it alone still does not
+    fit. The question and the assistant header stay in the window.
+    Padding positions are masked too.
     """
     import torch
 
     rows = []
     pad_id = getattr(tokenizer, "pad_token_id", None) or 0
     for example in batch_examples:
-        messages = _fit_messages(tokenizer, example["messages"], max_length)
+        messages = _fit_messages(
+            tokenizer,
+            example["messages"],
+            max_length,
+            passages=example.get("passages"),
+            gold=example.get("gold_passage"),
+        )
         prompt = tokenizer.apply_chat_template(
             messages[:-1], tokenize=False, add_generation_prompt=True
         )

@@ -109,6 +109,47 @@ def test_loss_log_and_seed(tmp_path):
     assert config["seed"] == 7 and config["r"] == 16 and config["lora_alpha"] == 32
 
 
+def _decoded(tokenizer, batch):
+    ids = [token for token in batch["input_ids"][0].tolist() if token != 0]
+    return ids, tokenizer.decode(ids)
+
+
+def test_collate_drops_non_gold_passages_before_cutting_the_gold():
+    gold = " ".join(f"goldword{index}" for index in range(12))
+    high = " ".join(f"highrank{index}" for index in range(12))
+    low = " ".join(f"lowrank{index}" for index in range(12))
+    passages = [high, gold, low]
+    tokenizer = _Tokenizer()
+
+    def example(kept):
+        return {
+            "messages": with_answer("UNIQUE_QUESTION", kept, "SHORT_ANSWER"),
+            "passages": kept,
+            "gold_passage": gold,
+        }
+
+    gold_only = collate_for_training([example([gold])], tokenizer, max_length=10000)
+    gold_len = int(gold_only["input_ids"].shape[-1])
+    with_high = collate_for_training([example([high, gold])], tokenizer, max_length=10000)
+    with_high_len = int(with_high["input_ids"].shape[-1])
+
+    # Room for the higher non-gold passage and the gold one, not the lowest.
+    kept = collate_for_training([example(passages)], tokenizer, max_length=with_high_len)
+    _ids, text = _decoded(tokenizer, kept)
+    assert all(word in text.split() for word in gold.split())
+    assert "highrank0" in text.split()
+    assert "lowrank0" not in text.split()
+
+    # Gold alone is over this cap, so it is the text that gets cut.
+    cut = collate_for_training([example(passages)], tokenizer, max_length=gold_len - 5)
+    _ids, text = _decoded(tokenizer, cut)
+    assert "lowrank0" not in text.split()
+    assert "highrank0" not in text.split()
+    assert "goldword0" in text.split()
+    assert "goldword11" not in text.split()
+    assert "UNIQUE_QUESTION" in text.split()
+
+
 def test_collate_clips_passages_and_keeps_the_question():
     passage = " ".join(f"passage{index}" for index in range(80))
     example = {"messages": with_answer("UNIQUE_QUESTION", [passage], "SHORT_ANSWER")}
