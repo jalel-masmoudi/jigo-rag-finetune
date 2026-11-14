@@ -43,3 +43,9 @@ The smoke flag is one optimizer step. It is not a sweep and not a test score.
 ```bash
 python train_reranker.py --smoke
 ```
+
+## Generator fine-tune
+
+`train_lora.py` adapts `Qwen/Qwen2.5-1.5B-Instruct` with QLoRA: rank 16, alpha 32, 4-bit NF4. Each question is trained twice: once with the gold chunk and the gold answer, and once with a chunk from a different document and the target `not found`. The loss is only on the answer tokens.
+
+4-bit training needs a CUDA GPU. `python train_lora.py --check-data` prints the examples on a CPU. `run_gpu.py` is the command to use on Kaggle or Colab.
