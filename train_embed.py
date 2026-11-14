@@ -26,9 +26,9 @@ from pathlib import Path
 
 from jigo_rag.config import SEED
 from jigo_rag.jsonl import read_jsonl
-from jigo_rag.metrics import bootstrap_mean_ci, recall_at_k
+from jigo_rag.metrics import bootstrap_mean_ci, mrr_at_k, paired_bootstrap_diff, recall_at_k
 from jigo_rag.negatives import mine_hard_negatives, select_best, training_columns
-from jigo_rag.retriever import EMBED_MODEL, FaissRetriever
+from jigo_rag.retriever import EMBED_MODEL, QUERY_PREFIX, FaissRetriever
 
 GRID = (
     {"learning_rate": 2e-5, "epochs": 1},
@@ -42,25 +42,33 @@ GRID = (
 
 def load_split(name):
     path = Path("data") / f"{name}.jsonl"
-    rows = read_jsonl(path)
-    if not rows:
+    if not path.exists():
         raise SystemExit(
-            f"{path} is missing or empty. Run python generate_qa.py first. "
+            f"{path} is missing. Run python generate_qa.py first. "
             "The smoke flag can exercise the loop without those files."
         )
+    rows = read_jsonl(path)
+    if not rows:
+        raise SystemExit(f"{path} is empty.")
     return rows
 
 
-def recall_at_5_scores(model, questions, corpus):
-    """One Recall@5 value (0 or 1) per question."""
+def per_query_scores(model, questions, corpus):
+    """Recall@5 and MRR@10 for each question, in the same order.
+
+    The index is the full corpus. `search` adds QUERY_PREFIX, the same
+    prefix the training rows carry on the question column.
+    """
     retriever = FaissRetriever(model_name=EMBED_MODEL)
     retriever.model = model
     retriever.build(corpus)
-    scores = []
+    recall_scores = []
+    mrr_scores = []
     for row in questions:
-        ranked = [hit["chunk_id"] for hit in retriever.search(row["question"], k=5)]
-        scores.append(recall_at_k(ranked, row["gold_chunk_id"], 5))
-    return scores
+        ranked = [hit["chunk_id"] for hit in retriever.search(row["question"], k=10)]
+        recall_scores.append(recall_at_k(ranked, row["gold_chunk_id"], 5))
+        mrr_scores.append(mrr_at_k(ranked, row["gold_chunk_id"], 10))
+    return recall_scores, mrr_scores
 
 
 def train_one(rows, learning_rate, epochs, output_dir, max_steps=None, batch_size=16):
@@ -73,19 +81,23 @@ def train_one(rows, learning_rate, epochs, output_dir, max_steps=None, batch_siz
     """
     from datasets import Dataset
     from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer
+    from sentence_transformers.base.sampler import BatchSamplers
     from sentence_transformers.sentence_transformer.losses import MultipleNegativesRankingLoss
     from sentence_transformers.sentence_transformer.training_args import (
         SentenceTransformerTrainingArguments,
     )
 
     model = SentenceTransformer(EMBED_MODEL)
-    dataset = Dataset.from_dict(training_columns(rows))
+    # Same query prefix the retriever uses at evaluation. Passages stay bare.
+    dataset = Dataset.from_dict(training_columns(rows, query_prefix=QUERY_PREFIX))
     loss = MultipleNegativesRankingLoss(model)
     args = SentenceTransformerTrainingArguments(
         output_dir=output_dir,
         learning_rate=learning_rate,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
+        # A duplicate query in one batch would be treated as a negative of itself.
+        batch_sampler=BatchSamplers.NO_DUPLICATES,
         dataloader_pin_memory=False,
         dataloader_num_workers=0,
         max_steps=max_steps if max_steps else -1,
@@ -141,11 +153,12 @@ def main():
     if not corpus:
         raise SystemExit("No chunks in data/chunks/. Run python make_data.py first.")
 
+    train_chunks = [chunk for chunk in corpus if chunk.get("split") == "train"]
     if args.smoke:
-        examples = smoke_examples(corpus)
-        # Index a small slice so the smoke step does not re-embed the whole handbook.
+        examples = smoke_examples(train_chunks)
+        # Index a small train-only slice so the smoke step stays small.
         slice_ids = {example["doc_id"] for example in examples}
-        small = [chunk for chunk in corpus if chunk["doc_id"] in slice_ids][:40]
+        small = [chunk for chunk in train_chunks if chunk["doc_id"] in slice_ids][:40]
         baseline = FaissRetriever().build(small)
 
         def search(question, k):
@@ -178,20 +191,24 @@ def main():
 
     train_rows = load_split("train")
     val_rows = load_split("val")
-    test_rows = read_jsonl("data/test_reviewed.jsonl")
+    reviewed = Path("data/test_reviewed.jsonl")
+    if not reviewed.exists():
+        raise SystemExit("data/test_reviewed.jsonl does not exist. Review the test set before scoring it.")
+    test_rows = read_jsonl(reviewed)
     if not test_rows:
-        raise SystemExit("data/test_reviewed.jsonl is empty. Review the test set before scoring it.")
-    baseline = FaissRetriever().build(corpus)
+        raise SystemExit("data/test_reviewed.jsonl is empty.")
+    # Negatives come from training chunks only. The test index is separate.
+    miner = FaissRetriever().build(train_chunks)
 
     def search(question, k):
-        return baseline.search(question, k=k)
+        return miner.search(question, k=k)
 
-    train_mined = mine_hard_negatives(train_rows, search, corpus, seed=SEED)
+    train_mined = mine_hard_negatives(train_rows, search, train_chunks, seed=SEED)
     records = []
     for spec in GRID:
         folder = f"models/embed-lr{spec['learning_rate']}-ep{spec['epochs']}"
         model = train_one(train_mined, spec["learning_rate"], spec["epochs"], folder)
-        val_scores = recall_at_5_scores(model, val_rows, corpus)
+        val_scores, _val_mrr = per_query_scores(model, val_rows, corpus)
         record = {
             **spec,
             "val_recall@5": sum(val_scores) / len(val_scores),
@@ -204,12 +221,18 @@ def main():
 
     # Score the selected checkpoint on the reviewed test set once.
     chosen = SentenceTransformer(winner["dir"])
-    test_scores = recall_at_5_scores(chosen, test_rows, corpus)
+    new_recall, new_mrr = per_query_scores(chosen, test_rows, corpus)
+    base_model = SentenceTransformer(EMBED_MODEL)
+    base_recall, base_mrr = per_query_scores(base_model, test_rows, corpus)
     report = {
         "smoke": False,
+        "seed": SEED,
         "runs": records,
         "winner": {key: winner[key] for key in ("learning_rate", "epochs", "val_recall@5", "dir")},
-        "test_recall@5": bootstrap_mean_ci(test_scores, seed=SEED),
+        "test_recall@5": bootstrap_mean_ci(new_recall, seed=SEED),
+        "test_mrr@10": bootstrap_mean_ci(new_mrr, seed=SEED),
+        "recall@5_gain_vs_baseline": paired_bootstrap_diff(base_recall, new_recall, seed=SEED),
+        "mrr@10_gain_vs_baseline": paired_bootstrap_diff(base_mrr, new_mrr, seed=SEED),
     }
     path = Path("results/embed.json")
     path.parent.mkdir(parents=True, exist_ok=True)

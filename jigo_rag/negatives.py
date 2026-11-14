@@ -8,10 +8,10 @@ away.
 
 The loss reads columns, and every row must have the same number of
 columns. If the retriever does not return enough negatives, the rest
-are random chunks from other documents. Those fillers are marked by
-being whatever is left after the mined ones; the column is still a
-negative. Three negatives is the default: enough to be harder than
-in-batch negatives alone, small enough for a free GPU.
+are random chunks from `corpus`. Pass only the training chunks as
+`corpus`. A hit whose id is not in that list is dropped, so a
+validation or test chunk cannot become a negative even if the
+retriever index still contains it. Three negatives is the default.
 """
 
 import random
@@ -24,6 +24,8 @@ def mine_hard_negatives(examples, search, corpus, n_negatives=3, search_k=20, se
     best first. `examples` need question, gold_chunk_id, doc_id, and
     chunk_text. An example that cannot fill `n_negatives` is skipped.
     """
+    allowed = {chunk["chunk_id"] for chunk in corpus}
+    by_id = {chunk["chunk_id"]: chunk for chunk in corpus}
     rng = random.Random(seed)
     mined = []
     for example in examples:
@@ -31,9 +33,12 @@ def mine_hard_negatives(examples, search, corpus, n_negatives=3, search_k=20, se
         negatives = []
         used = {example["gold_chunk_id"]}
         for hit in hits:
-            if hit["chunk_id"] in used or hit["doc_id"] == example["doc_id"]:
+            # Outside `corpus` means this chunk is not a training chunk.
+            if hit["chunk_id"] not in allowed or hit["chunk_id"] in used:
                 continue
-            negatives.append(hit["text"])
+            if hit["doc_id"] == example["doc_id"]:
+                continue
+            negatives.append(by_id[hit["chunk_id"]])
             used.add(hit["chunk_id"])
             if len(negatives) == n_negatives:
                 break
@@ -45,7 +50,7 @@ def mine_hard_negatives(examples, search, corpus, n_negatives=3, search_k=20, se
             ]
             rng.shuffle(fillers)
             for chunk in fillers:
-                negatives.append(chunk["text"])
+                negatives.append(chunk)
                 used.add(chunk["chunk_id"])
                 if len(negatives) == n_negatives:
                     break
@@ -57,19 +62,22 @@ def mine_hard_negatives(examples, search, corpus, n_negatives=3, search_k=20, se
             "gold_chunk_id": example["gold_chunk_id"],
             "doc_id": example["doc_id"],
         }
-        for index, text in enumerate(negatives, start=1):
-            row[f"negative_{index}"] = text
+        for index, chunk in enumerate(negatives, start=1):
+            row[f"negative_{index}"] = chunk["text"]
+            row[f"negative_{index}_id"] = chunk["chunk_id"]
         mined.append(row)
     return mined
 
 
-def training_columns(rows, n_negatives=3):
+def training_columns(rows, n_negatives=3, query_prefix=""):
     """Column order is the loss input order: query, positive, then negatives.
 
     Names are for people reading the file. The trainer uses the order.
+    `query_prefix` is the same string the retriever puts on a query at
+    evaluation time, and it is not added to passages.
     """
     columns = {
-        "question": [row["question"] for row in rows],
+        "question": [query_prefix + row["question"] for row in rows],
         "positive": [row["positive"] for row in rows],
     }
     for index in range(1, n_negatives + 1):

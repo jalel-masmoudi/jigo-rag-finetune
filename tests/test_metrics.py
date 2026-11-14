@@ -6,6 +6,7 @@ from jigo_rag.metrics import (
     bootstrap_mean_ci,
     exact_match,
     mrr_at_k,
+    paired_bootstrap_diff,
     percentile,
     recall_at_k,
     token_f1,
@@ -38,6 +39,19 @@ def test_exact_match_and_token_f1():
     assert abs(token_f1("alpha beta gamma", "beta gamma delta") - (2 / 3)) < 1e-9
     assert token_f1("", "") == 1
     assert token_f1("answer", "") == 0
+
+
+def test_paired_bootstrap_is_the_gain_on_the_same_questions():
+    baseline = [0, 0, 1, 1]
+    new = [1, 1, 1, 1]
+    summary = paired_bootstrap_diff(baseline, new, n_resamples=200, seed=1)
+    assert summary["mean_gain"] == 0.5
+    assert summary["ci_low"] <= 0.5 <= summary["ci_high"]
+    # Identical systems have a gain of zero, so the interval is a point.
+    flat = paired_bootstrap_diff([0.5, 0.5], [0.5, 0.5], n_resamples=20, seed=1)
+    assert flat["mean_gain"] == 0
+    assert flat["ci_low"] == 0
+    assert flat["ci_high"] == 0
 
 
 def test_percentile_and_bootstrap_of_a_constant():

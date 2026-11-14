@@ -104,3 +104,36 @@ def bootstrap_mean_ci(scores, n_resamples=1000, seed=42, alpha=0.05):
         "n_resamples": n_resamples,
         "seed": seed,
     }
+
+
+def paired_bootstrap_diff(baseline_scores, new_scores, n_resamples=1000, seed=42, alpha=0.05):
+    """95% interval for the mean of (new - baseline) on the same questions.
+
+    Each resample draws the same question indexes for both systems, so
+    the interval is about the gain, not about two unrelated means.
+    """
+    if len(baseline_scores) != len(new_scores) or not baseline_scores:
+        raise ValueError("paired scores must be the same non-empty length")
+    n_scores = len(baseline_scores)
+    rng = random.Random(seed)
+    gains = []
+    for _ in range(n_resamples):
+        indexes = [rng.randrange(n_scores) for _ in range(n_scores)]
+        baseline_mean = sum(baseline_scores[index] for index in indexes) / n_scores
+        new_mean = sum(new_scores[index] for index in indexes) / n_scores
+        gains.append(new_mean - baseline_mean)
+    gains.sort()
+    low_index = int((alpha / 2) * n_resamples)
+    high_index = int((1 - alpha / 2) * n_resamples) - 1
+    baseline_mean = sum(baseline_scores) / n_scores
+    new_mean = sum(new_scores) / n_scores
+    return {
+        "baseline_mean": baseline_mean,
+        "new_mean": new_mean,
+        "mean_gain": new_mean - baseline_mean,
+        "ci_low": gains[low_index],
+        "ci_high": gains[high_index],
+        "n": n_scores,
+        "n_resamples": n_resamples,
+        "seed": seed,
+    }
