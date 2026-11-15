@@ -3,7 +3,7 @@
 The grid is the one in the project spec: learning rate 2e-5 or 5e-5,
 and 1, 2, or 3 epochs. Each run starts from the public bge checkpoint,
 not from the previous run. The winner is the highest Recall@5 on the
-validation questions. That one model is then scored on the reviewed
+validation questions. That one model is then scored on the filtered
 test set, once, and saved to models/embed.
 
 Hard negatives are mined by eval.py's retriever (the baseline), three
@@ -193,7 +193,7 @@ def main():
     val_rows = load_split("val")
     reviewed = Path("data/test_reviewed.jsonl")
     if not reviewed.exists():
-        raise SystemExit("data/test_reviewed.jsonl does not exist. Review the test set before scoring it.")
+        raise SystemExit("data/test_reviewed.jsonl does not exist. Run python auto_filter_test.py.")
     test_rows = read_jsonl(reviewed)
     if not test_rows:
         raise SystemExit("data/test_reviewed.jsonl is empty.")
@@ -219,7 +219,7 @@ def main():
     winner = select_best(records)
     from sentence_transformers import SentenceTransformer
 
-    # Score the selected checkpoint on the reviewed test set once.
+    # Score the selected checkpoint on the filtered test set once.
     chosen = SentenceTransformer(winner["dir"])
     # The grid directories stay so a run can be inspected. models/embed
     # is the checkpoint that was selected.

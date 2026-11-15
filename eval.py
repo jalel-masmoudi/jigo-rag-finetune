@@ -7,7 +7,7 @@ model output and is refused here.
     python eval.py
     python eval.py --smoke --smoke-size 30 --retrieval-only
 
-`--smoke` does not read the reviewed test set. It uses the first
+`--smoke` does not read data/test_reviewed.jsonl. It uses the first
 sentence of a chunk as the query and the chunk as the gold hit. That
 is a sanity check that the index can find a passage from its own
 words. It is not a number for the results table. The JSON it writes
@@ -60,16 +60,28 @@ def load_corpus():
     return chunks
 
 
+# keep and fix come from review_test.py. auto_keep comes from the filter.
+ALLOWED_REVIEW_ACTIONS = {"keep", "fix", "auto_keep"}
+
+
 def load_reviewed_test():
     if not REVIEWED_TEST.exists():
         raise SystemExit(
             "data/test_reviewed.jsonl does not exist. "
-            "Review the test rows with python review_test.py. "
+            "Run python auto_filter_test.py. "
             "data/test.jsonl is not the test set."
         )
     rows = read_jsonl(REVIEWED_TEST)
     if not rows:
         raise SystemExit("data/test_reviewed.jsonl is empty.")
+    for row in rows:
+        action = row.get("review_action")
+        if action not in ALLOWED_REVIEW_ACTIONS:
+            raise SystemExit(
+                f"data/test_reviewed.jsonl row {row.get('row_id', '?')} "
+                f"has review_action {action!r}. "
+                "Expected keep, fix, or auto_keep."
+            )
     return rows
 
 

@@ -9,7 +9,7 @@ Each request asks for several questions about one chunk. Finished
 chunks are appended to data/{split}.jsonl and skipped on the next run,
 so a daily free-tier cap can be continued the next day.
 
-The test split is generated first. Those are the rows a person reviews.
+The test split is generated first. auto_filter_test.py reads that file.
 
     python generate_qa.py
 """
@@ -156,7 +156,7 @@ def main():
     from google import genai
 
     client = genai.Client(api_key=api_key)
-    # Test first: those rows are the ones a person reviews, and a daily
+    # Test first: auto_filter_test.py reads that file, and a daily
     # cap may stop the run before the training split is finished.
     for split in ("test", "val", "train"):
         generate_split(client, model, template, split, sleep_seconds)

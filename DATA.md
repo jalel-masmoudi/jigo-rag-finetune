@@ -72,7 +72,7 @@ Rounding on this corpus gives:
 
 Why not split by chunk: neighboring windows of one page share 64 tokens and usually the same facts. If one window is in train and the next is in test, a model can memorize the page and score well on a question it has essentially already seen. Keeping every chunk of a document in one split blocks that leak. The retrieval index at evaluation time still contains every chunk. The split only decides which documents may be used to train.
 
-The test split has 165 chunks. The question generator asks for at most 4 questions per chunk, and for this count it asks for 3 (`ceil(360 / 165) = 3`). 165 × 3 = 495, which is more than the 360 test questions, so 70/10/20 already leaves enough test material for a 300–400 question review set. The fractions were not changed after the count.
+The test split has 165 chunks. The question generator asks for at most 4 questions per chunk, and for this count it asks for 3 (`ceil(360 / 165) = 3`). 165 × 3 = 495, which is more than the 360 test questions, so 70/10/20 already leaves enough test chunks for the 360 questions that `auto_filter_test.py` filters. The fractions were not changed after the count.
 
 ## Synthetic questions
 
@@ -82,15 +82,28 @@ The model id is `GEMINI_MODEL`, default **`gemini-3.5-flash-lite`**. On the Gemi
 
 Each request asks for several questions about **one** chunk. The script sets `gold_chunk_id` to that chunk. It does not trust the model to copy ids. An answer is kept only when most of its words appear in the chunk (`jigo_rag/qa.py`). The prompt says the question must be answerable from that passage alone.
 
-Targets: 1,440 train + 200 validation + 360 test = 2,000. Test is generated first, because those are the rows a person reviews, and a free-tier daily cap may stop the run. Finished chunks are appended to `data/{train,val,test}.jsonl` and skipped on the next run. Wait between calls with `GEMINI_SLEEP_SECONDS` (default 4). A daily quota error stops the process without deleting what was already written. Run the same command again the next day.
+Targets: 1,440 train + 200 validation + 360 test = 2,000. Test is generated first, because that file is the one `auto_filter_test.py` reads, and a free-tier daily cap may stop the run. Finished chunks are appended to `data/{train,val,test}.jsonl` and skipped on the next run. Wait between calls with `GEMINI_SLEEP_SECONDS` (default 4). A daily quota error stops the process without deleting what was already written. Run the same command again the next day.
 
 This workspace did not have a `GEMINI_API_KEY`, so that script has not been run. The 20 rows in `data/sample/` are hand-written from real chunks so the file format is visible. Each answer is a copied span of its chunk. They are not model output and they are not the evaluation set.
 
-## Hand review
+## Test set
 
-`review_test.py` shows one test row at a time. `k` keeps it, `f` lets you replace the question or the answer, `d` drops it, `q` stops. Kept and fixed rows are appended to `data/test_reviewed.jsonl`. Dropped rows are appended to `data/test_dropped.jsonl` so they are not shown again. Progress is saved after each row.
+The test set is not hand-reviewed. `auto_filter_test.py` reads `data/test.jsonl` and writes the rows that pass to `data/test_reviewed.jsonl`. Dropped rows go to `data/test_dropped.jsonl`. The script does not call an API. It refuses to overwrite an existing `data/test_reviewed.jsonl` unless `--force` is passed, and it prints a count for each drop reason.
 
-**Only `data/test_reviewed.jsonl` is the test set.** `data/test.jsonl` is raw model output and must not be used for a score. The reviewed file is gitignored, same as the other full generated files, because it is produced on your machine and can be large. `eval.py` reads it from disk. When you want that exact reviewed set in git, add it with `git add -f data/test_reviewed.jsonl`. The raw generated files and the cloned corpora are gitignored.
+A row is dropped for the first of these reasons:
+
+1. It does not pass `validate_qa`.
+2. Its split is not `test`.
+3. The answer is more than 40 words.
+4. The question uses a whole phrase that points at the text: "the passage", "this passage", "this text", "the above", "as mentioned above", "the text above", "this section", "the document", "this document", "the chunk", "the article", "the excerpt", or "according to the text". A bare word is not enough, so "document retention period", "passage of time", and "Above and Beyond" stay.
+5. After SQuAD normalization (the same function as exact match), the answer is not a whole-word span of the chunk. "30" does not match "300".
+6. The same chunk already kept a question with that normalized text.
+
+Kept rows are marked `review_action` `auto_keep`. Dropped rows are marked `auto_drop` and include `drop_reason`.
+
+**Only `data/test_reviewed.jsonl` is the test set.** `data/test.jsonl` is raw model output and must not be used for a score. The filtered file is gitignored, same as the other full generated files, because it is produced on your machine and can be large. `eval.py` reads it from disk. When you want that exact filtered set in git, add it with `git add -f data/test_reviewed.jsonl`. The raw generated files and the cloned corpora are gitignored.
+
+`review_test.py` can still walk rows one at a time (`k` keep, `f` fix, `d` drop, `q` quit). That is a separate manual pass. It is not how the test set is made. It does not read `auto_keep` or `auto_drop`; it skips a row id that is already in either output file.
 
 ## How to rebuild
 
@@ -100,7 +113,7 @@ python -m venv .venv
 cp .env.example .env   # then put the key in .env; do not commit it
 .venv/bin/python make_data.py
 .venv/bin/python generate_qa.py
-.venv/bin/python review_test.py
+.venv/bin/python auto_filter_test.py
 ```
 
 `make_data.py` clones into `data/raw/` (or `--raw`) and writes `{train,val,test}.jsonl` plus `stats.json` into `--out` (default `data/chunks`). The same seed (42) and the same pinned commits reproduce the split. Question text depends on the model, so a second Gemini run is not guaranteed to match the first word for word. The script is resumable so you do not have to throw a partial file away.

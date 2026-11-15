@@ -35,8 +35,8 @@ TRAIN_FRACTION = 0.70
 VAL_FRACTION = 0.10
 TEST_FRACTION = 0.20
 
-# 1440 + 200 + 360 = 2000 questions. The test target sits inside the
-# 300-400 questions a person can hand-check. At most 4 questions are
+# 1440 + 200 + 360 = 2000 questions. The test target is a few hundred
+# questions. At most 4 questions are
 # asked of one chunk, so a short passage is not forced to invent facts.
 QA_TARGETS = {"train": 1440, "val": 200, "test": 360}
 QA_MAX_PER_CHUNK = 4

@@ -1,9 +1,9 @@
 """Hand-check test questions, one at a time.
 
-Only rows you keep or fix are written to data/test_reviewed.jsonl.
-That file is the test set. data/test.jsonl is the raw model output
-and is not used for scores. Dropped rows go to data/test_dropped.jsonl
-so a later session does not show them again.
+This is optional. The test set is produced by auto_filter_test.py,
+not by this script. Keys here are still keep, fix, and drop. This
+script does not look at review_action, including auto_keep and
+auto_drop. It skips a row id that is already in either output file.
 
     python review_test.py
 

@@ -12,7 +12,8 @@ tags:
 Fine-tune of `BAAI/bge-small-en-v1.5` with MultipleNegativesRankingLoss.
 The base model is MIT licensed. This card is a template. Fill the
 metrics from `results/embed.json` after the sweep has run on the
-reviewed test set. Do not write a smoke-run number here.
+filtered test set. That file is `data/test_reviewed.jsonl`, written by
+`auto_filter_test.py`. It is not hand-reviewed. Do not write a smoke-run number here.
 
 ## Training
 
@@ -30,8 +31,8 @@ Retrieve passages from the GSA TTS Handbook and the Jigo AI Workspace markdown d
 
 | | Recall@5 | 95% interval | n |
 | --- | --- | --- | --- |
-| Reviewed test set |  |  |  |
+| Filtered test set |  |  |  |
 
 ## Limitations
 
-The questions are synthetic. The test questions are the ones a person kept in `data/test_reviewed.jsonl`. A document in the test set does not appear in training. The model still truncates a 512-token window by one or two tokens because `[CLS]` and `[SEP]` are added at embedding time.
+The questions are synthetic. The test questions are the Gemini questions that pass `auto_filter_test.py`, written to `data/test_reviewed.jsonl`. They are not hand-reviewed. A document in the test set does not appear in training. The model still truncates a 512-token window by one or two tokens because `[CLS]` and `[SEP]` are added at embedding time.

@@ -1,6 +1,6 @@
 # jigo-rag-finetune
 
-This repository fine-tunes a retriever and a generator for retrieval-augmented answering over enterprise-style documents. The corpus is the public-domain GSA TTS Handbook plus the markdown documentation from Jigo AI Workspace. Documents are chunked, split so that no document is in two sets, and the test questions are the ones a person has reviewed. The baseline is `BAAI/bge-small-en-v1.5` with FAISS and `Qwen/Qwen2.5-1.5B-Instruct`. Later steps fine-tune the embedding model, add a cross-encoder reranker, and adapt the generator with QLoRA. A small FastAPI service exposes the pipeline. Every number in the table below has to come from a real run on `data/test_reviewed.jsonl`. The cells are empty because that run has not happened.
+This repository fine-tunes a retriever and a generator for retrieval-augmented answering over enterprise-style documents. The corpus is the public-domain GSA TTS Handbook plus the markdown documentation from Jigo AI Workspace. Documents are chunked, split so that no document is in two sets, and the test questions are the Gemini questions that pass `auto_filter_test.py`. They are not hand-reviewed. The baseline is `BAAI/bge-small-en-v1.5` with FAISS and `Qwen/Qwen2.5-1.5B-Instruct`. Later steps fine-tune the embedding model, add a cross-encoder reranker, and adapt the generator with QLoRA. A small FastAPI service exposes the pipeline. Every number in the table below has to come from a real run on `data/test_reviewed.jsonl`. The cells are empty because that run has not happened.
 
 ## Architecture
 
@@ -24,10 +24,10 @@ Sources, the pinned commits, the filters, and the split counts are in [DATA.md](
 ```bash
 python make_data.py
 python generate_qa.py
-python review_test.py
+python auto_filter_test.py
 ```
 
-`generate_qa.py` reads `GEMINI_API_KEY` (see `.env.example`). It appends to `data/{train,val,test}.jsonl` and skips chunks already done. `review_test.py` is the hand check. Scores use only `data/test_reviewed.jsonl`.
+`generate_qa.py` reads `GEMINI_API_KEY` (see `.env.example`). It appends to `data/{train,val,test}.jsonl` and skips chunks already done. `auto_filter_test.py` writes `data/test_reviewed.jsonl` from `data/test.jsonl`. Scores use only that file. The filter is deterministic and does not call an API. A row is dropped when it fails `validate_qa`, when its split is not `test`, when the answer is longer than 40 words, when the question uses a whole phrase such as "the passage" or "this document" (not a bare word), when the normalized answer is not a whole-word span of the normalized chunk, or when the same chunk already kept that normalized question. `DATA.md` lists the same rules.
 
 ## Baseline
 
@@ -41,7 +41,7 @@ The smoke query is the first sentence of the gold chunk. The JSON has `"smoke": 
 
 ## Embedding fine-tune
 
-`train_embed.py` fine-tunes bge-small with MultipleNegativesRankingLoss. Each row is the question, the gold chunk, and three hard negatives from the baseline retriever. Hits from the gold document are skipped, because the windows overlap. The grid is learning rate {2e-5, 5e-5} and {1, 2, 3} epochs. The best validation Recall@5 is scored on the reviewed test set once.
+`train_embed.py` fine-tunes bge-small with MultipleNegativesRankingLoss. Each row is the question, the gold chunk, and three hard negatives from the baseline retriever. Hits from the gold document are skipped, because the windows overlap. The grid is learning rate {2e-5, 5e-5} and {1, 2, 3} epochs. The best validation Recall@5 is scored on the filtered test set once.
 
 ```bash
 python train_embed.py --smoke
@@ -99,4 +99,4 @@ python -m venv .venv
 
 ## Limitations
 
-The questions are written by a model from a single chunk, then filtered so the answer's words appear in that chunk. The test set is only as good as the hand review. Splitting by document stops a page from sitting in both train and test; it does not stop two pages from saying the same fact. The embedding model adds `[CLS]` and `[SEP]`, so the last token or two of a full 512-token window can be dropped at retrieval time. No official score is in this file yet.
+The questions are written by a model from a single chunk. The test set is those questions after `auto_filter_test.py`, not a hand review. Splitting by document stops a page from sitting in both train and test; it does not stop two pages from saying the same fact. The embedding model adds `[CLS]` and `[SEP]`, so the last token or two of a full 512-token window can be dropped at retrieval time. No official score is in this file yet.
