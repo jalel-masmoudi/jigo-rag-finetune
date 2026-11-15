@@ -27,7 +27,7 @@ python generate_qa.py
 python auto_filter_test.py
 ```
 
-`generate_qa.py` reads `GEMINI_API_KEY` (see `.env.example`). It appends to `data/{train,val,test}.jsonl` and skips chunks already done. `auto_filter_test.py` writes `data/test_reviewed.jsonl` from `data/test.jsonl`. Scores use only that file. The filter is deterministic and does not call an API. A row is dropped when it fails `validate_qa`, when the answer is longer than 40 words, when the question says "the passage", "this text", "the above", "this section", "the document", or "the chunk", when the normalized answer is not a substring of the normalized chunk, or when the same chunk already kept that normalized question. `DATA.md` lists the same rules.
+`generate_qa.py` reads `GEMINI_API_KEY` (see `.env.example`). It appends to `data/{train,val,test}.jsonl` and skips chunks already done. `auto_filter_test.py` writes `data/test_reviewed.jsonl` from `data/test.jsonl`. Scores use only that file. The filter is deterministic and does not call an API. A row is dropped when it fails `validate_qa`, when its split is not `test`, when the answer is longer than 40 words, when the question uses a whole phrase such as "the passage" or "this document" (not a bare word), when the normalized answer is not a whole-word span of the normalized chunk, or when the same chunk already kept that normalized question. `DATA.md` lists the same rules.
 
 ## Baseline
 

@@ -128,7 +128,7 @@ def main():
     if not train_path.exists() or not reviewed.exists():
         raise SystemExit(
             "Need data/train.jsonl and data/test_reviewed.jsonl. "
-            "Generate questions, then review the test set."
+            "Generate questions, then run python auto_filter_test.py."
         )
     train_rows = read_jsonl(train_path)
     test_rows = read_jsonl(reviewed)

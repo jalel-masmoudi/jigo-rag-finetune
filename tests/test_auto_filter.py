@@ -115,6 +115,100 @@ def test_a_row_that_fails_the_schema_is_dropped():
     assert drop_reason(broken, set()) == "invalid_qa"
 
 
+def test_a_short_answer_is_kept_and_a_number_does_not_match_inside_a_longer_one():
+    kept, dropped, counts = filter_rows(
+        [
+            _row(answer="Concur"),
+            _row(
+                row_id="gsa-handbook/pages/travel.md#0/q1",
+                question="How many people work there?",
+                answer="30",
+                chunk_text="There are 300 employees in the office.",
+            ),
+            _row(
+                row_id="gsa-handbook/pages/travel.md#0/q2",
+                question="How many seats are open?",
+                answer="30",
+                chunk_text="There are 30 seats in the office.",
+            ),
+        ]
+    )
+    assert [row["row_id"] for row in kept] == [
+        "gsa-handbook/pages/travel.md#0/q0",
+        "gsa-handbook/pages/travel.md#0/q2",
+    ]
+    assert dropped[0]["drop_reason"] == "answer_not_in_chunk"
+    assert counts["answer_not_in_chunk"] == 1
+
+
+def test_self_reference_phrases_are_dropped_and_longer_names_are_kept():
+    dropped_questions = [
+        "What does this passage say about Concur?",
+        "Where is travel booked according to the text?",
+        "What does the text above say about Concur?",
+        "Where is travel booked as mentioned above?",
+        "What does the article say about Concur?",
+        "What does the excerpt say about Concur?",
+        "What does this document say about Concur?",
+    ]
+    kept_questions = [
+        "What is the document retention period for Concur?",
+        "How long is a passage of time before Concur?",
+        "What is Above and Beyond in Concur?",
+    ]
+    rows = []
+    for index, question in enumerate(dropped_questions + kept_questions):
+        rows.append(_row(row_id=f"gsa-handbook/pages/travel.md#0/q{index}", question=question))
+    kept, dropped, counts = filter_rows(rows)
+    assert [row["question"] for row in kept] == kept_questions
+    assert counts["refers_to_text"] == len(dropped_questions)
+    assert {row["drop_reason"] for row in dropped} == {"refers_to_text"}
+
+
+def test_a_row_from_another_split_is_dropped():
+    kept, dropped, counts = filter_rows([_row(split="train"), _row()])
+    assert len(kept) == 1
+    assert dropped[0]["drop_reason"] == "wrong_split"
+    assert counts["wrong_split"] == 1
+
+
+def test_the_same_input_writes_the_same_bytes(tmp_path):
+    rows = [
+        _row(),
+        _row(
+            row_id="gsa-handbook/pages/travel.md#0/q1",
+            question="What does the passage say about Concur?",
+        ),
+        _row(split="val", row_id="gsa-handbook/pages/travel.md#0/q2", question="Is travel booked in Concur?"),
+    ]
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    write_filter(rows, first / "kept.jsonl", first / "dropped.jsonl", force=False)
+    write_filter(rows, second / "kept.jsonl", second / "dropped.jsonl", force=False)
+    assert (first / "kept.jsonl").read_bytes() == (second / "kept.jsonl").read_bytes()
+    assert (first / "dropped.jsonl").read_bytes() == (second / "dropped.jsonl").read_bytes()
+
+
+def test_eval_accepts_only_keep_fix_and_auto_keep(tmp_path, monkeypatch):
+    from jigo_rag.jsonl import write_jsonl
+    from eval import load_reviewed_test
+
+    path = tmp_path / "test_reviewed.jsonl"
+    monkeypatch.setattr("eval.REVIEWED_TEST", path)
+    write_jsonl(path, [_row(review_action="auto_keep"), _row(row_id="gsa-handbook/pages/travel.md#0/q1", review_action="keep")])
+    assert len(load_reviewed_test()) == 2
+    write_jsonl(path, [_row(review_action="fix")])
+    assert load_reviewed_test()[0]["review_action"] == "fix"
+    write_jsonl(path, [_row(review_action="auto_drop")])
+    try:
+        load_reviewed_test()
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("auto_drop was accepted as a test row")
+    assert "auto_drop" in message
+
+
 def test_existing_reviewed_file_is_kept_unless_force(tmp_path):
     source = [_row()]
     kept_path = tmp_path / "test_reviewed.jsonl"

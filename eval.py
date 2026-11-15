@@ -60,6 +60,10 @@ def load_corpus():
     return chunks
 
 
+# keep and fix come from review_test.py. auto_keep comes from the filter.
+ALLOWED_REVIEW_ACTIONS = {"keep", "fix", "auto_keep"}
+
+
 def load_reviewed_test():
     if not REVIEWED_TEST.exists():
         raise SystemExit(
@@ -70,6 +74,14 @@ def load_reviewed_test():
     rows = read_jsonl(REVIEWED_TEST)
     if not rows:
         raise SystemExit("data/test_reviewed.jsonl is empty.")
+    for row in rows:
+        action = row.get("review_action")
+        if action not in ALLOWED_REVIEW_ACTIONS:
+            raise SystemExit(
+                f"data/test_reviewed.jsonl row {row.get('row_id', '?')} "
+                f"has review_action {action!r}. "
+                "Expected keep, fix, or auto_keep."
+            )
     return rows
 
 

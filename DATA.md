@@ -72,7 +72,7 @@ Rounding on this corpus gives:
 
 Why not split by chunk: neighboring windows of one page share 64 tokens and usually the same facts. If one window is in train and the next is in test, a model can memorize the page and score well on a question it has essentially already seen. Keeping every chunk of a document in one split blocks that leak. The retrieval index at evaluation time still contains every chunk. The split only decides which documents may be used to train.
 
-The test split has 165 chunks. The question generator asks for at most 4 questions per chunk, and for this count it asks for 3 (`ceil(360 / 165) = 3`). 165 × 3 = 495, which is more than the 360 test questions, so 70/10/20 already leaves enough test material for a 300–400 question review set. The fractions were not changed after the count.
+The test split has 165 chunks. The question generator asks for at most 4 questions per chunk, and for this count it asks for 3 (`ceil(360 / 165) = 3`). 165 × 3 = 495, which is more than the 360 test questions, so 70/10/20 already leaves enough test chunks for the 360 questions that `auto_filter_test.py` filters. The fractions were not changed after the count.
 
 ## Synthetic questions
 
@@ -93,10 +93,11 @@ The test set is not hand-reviewed. `auto_filter_test.py` reads `data/test.jsonl`
 A row is dropped for the first of these reasons:
 
 1. It does not pass `validate_qa`.
-2. The answer is more than 40 words.
-3. The question refers to the text itself: "the passage", "this text", "the above", "this section", "the document", or "the chunk".
-4. After SQuAD normalization (the same function as exact match), the answer is not a substring of the chunk.
-5. The same chunk already kept a question with that normalized text.
+2. Its split is not `test`.
+3. The answer is more than 40 words.
+4. The question uses a whole phrase that points at the text: "the passage", "this passage", "this text", "the above", "as mentioned above", "the text above", "this section", "the document", "this document", "the chunk", "the article", "the excerpt", or "according to the text". A bare word is not enough, so "document retention period", "passage of time", and "Above and Beyond" stay.
+5. After SQuAD normalization (the same function as exact match), the answer is not a whole-word span of the chunk. "30" does not match "300".
+6. The same chunk already kept a question with that normalized text.
 
 Kept rows are marked `review_action` `auto_keep`. Dropped rows are marked `auto_drop` and include `drop_reason`.
 

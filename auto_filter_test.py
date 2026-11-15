@@ -7,13 +7,15 @@ This is not a hand review. The rules below are the whole decision.
 A row is dropped for the first reason that applies:
 
 1. It does not pass validate_qa (`invalid_qa`).
-2. The answer is more than 40 words (`answer_too_long`).
-3. The question refers to the text itself (`refers_to_text`):
-   "the passage", "this text", "the above", "this section",
-   "the document", or "the chunk".
-4. After the same SQuAD normalization used for exact match, the answer
-   is not a substring of the chunk (`answer_not_in_chunk`).
-5. The same chunk already kept a question with the same normalized
+2. Its split is not "test" (`wrong_split`).
+3. The answer is more than 40 words (`answer_too_long`).
+4. The question refers to the text itself (`refers_to_text`). The match
+   is a whole phrase, such as "the passage" or "this document", not a
+   bare word. "document retention period" is kept.
+5. After the same SQuAD normalization used for exact match, the answer
+   is not a whole-word substring of the chunk (`answer_not_in_chunk`).
+   "30" does not match "300".
+6. The same chunk already kept a question with the same normalized
    text (`duplicate_question`).
 
 Kept rows get review_action "auto_keep". Dropped rows get
@@ -39,6 +41,7 @@ DROPPED_PATH = Path("data/test_dropped.jsonl")
 # Printed in this order, including zeros, so a run is easy to compare.
 DROP_REASONS = (
     "invalid_qa",
+    "wrong_split",
     "answer_too_long",
     "refers_to_text",
     "answer_not_in_chunk",
@@ -47,31 +50,40 @@ DROP_REASONS = (
 
 MAX_ANSWER_WORDS = 40
 
-# Phrases that point at the passage instead of asking a real question.
+# Whole phrases only. A bare word such as "passage" or "document" is not
+# enough, and a longer name such as "document retention" is not either.
 _SELF_REFERENCE = (
-    "the passage",
-    "this text",
-    "the above",
-    "this section",
-    "the document",
-    "the chunk",
+    r"according to the text",
+    r"as mentioned above",
+    r"the text above",
+    r"this passage",
+    r"this text",
+    r"this section",
+    r"this document",
+    r"the article",
+    r"the excerpt",
+    r"the passage(?!\s+of\b)",
+    r"the above(?!\s+and\s+beyond\b)",
+    r"the document(?!\s+retention\b)",
+    r"the chunk",
 )
 _SELF_REFERENCE_RE = re.compile(
-    "|".join(rf"\b{re.escape(phrase)}\b" for phrase in _SELF_REFERENCE),
+    "|".join(rf"\b{phrase}\b" for phrase in _SELF_REFERENCE),
     re.IGNORECASE,
 )
 
 
 def answer_in_chunk(answer, chunk_text):
-    """True when the normalized answer is a non-empty substring of the chunk.
+    """True when the normalized answer is a whole span of the chunk.
 
     Normalization is the SQuAD function in jigo_rag.metrics, the same one
-    exact match uses. An answer that normalizes to nothing does not match.
+    exact match uses. Spaces are added on both sides so "30" does not
+    match inside "300". An answer that normalizes to nothing does not match.
     """
     normalized_answer = normalize(answer)
     if not normalized_answer:
         return False
-    return normalized_answer in normalize(chunk_text)
+    return f" {normalized_answer} " in f" {normalize(chunk_text)} "
 
 
 def refers_to_text(question):
@@ -90,6 +102,8 @@ def drop_reason(row, seen):
         validate_qa(row)
     except (TypeError, ValueError, KeyError):
         return "invalid_qa"
+    if row.get("split") != "test":
+        return "wrong_split"
     if len(str(row["answer"]).split()) > MAX_ANSWER_WORDS:
         return "answer_too_long"
     if refers_to_text(str(row["question"])):
