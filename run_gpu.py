@@ -4,7 +4,7 @@ Do the CPU steps first, on any machine:
 
     python make_data.py
     python generate_qa.py
-    python review_test.py
+    python auto_filter_test.py
 
 Then, on a free Kaggle or Colab GPU, do not reinstall torch. Those
 machines already ship torch with CUDA. This repo checked torch 2.15.0.
@@ -63,7 +63,7 @@ def main():
             + "\n".join(failed)
             + "\nEval ran afterward for whatever training finished. Read results/."
         )
-    print("Done. Read results/*.json. Leave the README table empty until those files are from the reviewed test set.")
+    print("Done. Read results/*.json. Leave the README table empty until those files are from data/test_reviewed.jsonl.")
 
 
 if __name__ == "__main__":

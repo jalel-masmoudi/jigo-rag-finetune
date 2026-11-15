@@ -6,8 +6,8 @@ is assigned by the script from the chunk that was sent, not copied
 from the model's reply.
 
 `answer_supported` drops an answer whose words are mostly absent from
-that chunk. It is a filter, not a proof: a person still reviews the
-test rows.
+that chunk. It is a filter, not a proof. The test set is whatever
+`auto_filter_test.py` keeps, not a hand review.
 """
 
 import json

@@ -6,7 +6,7 @@ binary cross-entropy on the cross-encoder logit.
 
 At evaluation the baseline retriever returns 20 passages and the
 cross-encoder reorders them. Recall@5 is computed on that order, on
-the reviewed test set, once. There is no learning-rate sweep; the
+the filtered test set, once. There is no learning-rate sweep; the
 spec does not ask for one. The learning rate is 2e-5 for one epoch.
 
     python train_reranker.py

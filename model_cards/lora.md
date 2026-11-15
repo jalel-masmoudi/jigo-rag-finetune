@@ -31,7 +31,7 @@ Answer a question from retrieved handbook passages. Reply with exactly `not foun
 
 | | Exact match | Token F1 | Judge | n |
 | --- | --- | --- | --- | --- |
-| Reviewed test set, same retrieved context as the baseline |  |  |  |  |
+| Filtered test set, same retrieved context as the baseline |  |  |  |  |
 
 ## Limitations
 
