@@ -29,6 +29,7 @@ from jigo_rag.jsonl import read_jsonl
 from jigo_rag.metrics import bootstrap_mean_ci, mrr_at_k, paired_bootstrap_diff, recall_at_k
 from jigo_rag.negatives import mine_hard_negatives, select_best, training_columns
 from jigo_rag.retriever import EMBED_MODEL, QUERY_PREFIX, FaissRetriever
+from jigo_rag.schema import require_review_actions
 
 GRID = (
     {"learning_rate": 2e-5, "epochs": 1},
@@ -98,6 +99,9 @@ def train_one(rows, learning_rate, epochs, output_dir, max_steps=None, batch_siz
         per_device_train_batch_size=batch_size,
         # A duplicate query in one batch would be treated as a negative of itself.
         batch_sampler=BatchSamplers.NO_DUPLICATES,
+        # Batch 16 at 512 tokens needs more than 6.5 GB of activations
+        # without this, which does not fit an 8 GB card. Same gradients, slower step.
+        gradient_checkpointing=True,
         dataloader_pin_memory=False,
         dataloader_num_workers=0,
         max_steps=max_steps if max_steps else -1,
@@ -194,7 +198,7 @@ def main():
     reviewed = Path("data/test_reviewed.jsonl")
     if not reviewed.exists():
         raise SystemExit("data/test_reviewed.jsonl does not exist. Run python auto_filter_test.py.")
-    test_rows = read_jsonl(reviewed)
+    test_rows = require_review_actions(read_jsonl(reviewed))
     if not test_rows:
         raise SystemExit("data/test_reviewed.jsonl is empty.")
     # Negatives come from training chunks only. The test index is separate.

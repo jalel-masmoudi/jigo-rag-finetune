@@ -69,3 +69,19 @@ def validate_qa(row):
     if not str(row["row_id"]).startswith(row["gold_chunk_id"] + "/q"):
         raise ValueError("row_id must start with the gold chunk id and '/q'")
     return row
+
+
+# keep and fix are written by review_test.py. auto_keep is the filter.
+ALLOWED_REVIEW_ACTIONS = {"keep", "fix", "auto_keep"}
+
+
+def require_review_actions(rows, source="data/test_reviewed.jsonl"):
+    """Reject a test row whose review_action is not one of the three allowed."""
+    for row in rows:
+        action = row.get("review_action")
+        if action not in ALLOWED_REVIEW_ACTIONS:
+            raise SystemExit(
+                f"{source} row {row.get('row_id', '?')} has review_action {action!r}. "
+                "Expected keep, fix, or auto_keep."
+            )
+    return rows

@@ -46,6 +46,7 @@ from jigo_rag.metrics import (
     token_f1,
 )
 from jigo_rag.retriever import FaissRetriever
+from jigo_rag.schema import require_review_actions
 
 REVIEWED_TEST = Path("data/test_reviewed.jsonl")
 JUDGE_PROMPT = Path("prompts/judge.txt")
@@ -60,10 +61,6 @@ def load_corpus():
     return chunks
 
 
-# keep and fix come from review_test.py. auto_keep comes from the filter.
-ALLOWED_REVIEW_ACTIONS = {"keep", "fix", "auto_keep"}
-
-
 def load_reviewed_test():
     if not REVIEWED_TEST.exists():
         raise SystemExit(
@@ -74,15 +71,7 @@ def load_reviewed_test():
     rows = read_jsonl(REVIEWED_TEST)
     if not rows:
         raise SystemExit("data/test_reviewed.jsonl is empty.")
-    for row in rows:
-        action = row.get("review_action")
-        if action not in ALLOWED_REVIEW_ACTIONS:
-            raise SystemExit(
-                f"data/test_reviewed.jsonl row {row.get('row_id', '?')} "
-                f"has review_action {action!r}. "
-                "Expected keep, fix, or auto_keep."
-            )
-    return rows
+    return require_review_actions(rows)
 
 
 def first_sentence(text):
@@ -354,6 +343,47 @@ def _present(path):
     return directory if directory.is_dir() and any(directory.iterdir()) else None
 
 
+class _BaseGenerator:
+    """The shared Qwen model with its LoRA adapter turned off."""
+
+    def __init__(self, shared):
+        self.shared = shared
+
+    def answer(self, question, passages, max_new_tokens=128):
+        return self.shared.answer(
+            question, passages, max_new_tokens=max_new_tokens, disable_adapter=True
+        )
+
+
+def suite_generators(lora_path, retrieval_only):
+    """One Qwen for the whole suite when an adapter is on disk.
+
+    Loading the base and the base-plus-adapter as two models does not
+    fit an 8 GB card. Base rows run inside disable_adapter(). The LoRA
+    rows use the same object with the adapter on. Prompts and greedy
+    decoding stay the ones in QwenGenerator.answer.
+    """
+    if retrieval_only:
+        # No base generator. The LoRA row, if the adapter is on disk,
+        # still needs the one adapted model.
+        if not lora_path:
+            return None, None
+        return None, QwenGenerator(adapter_path=str(lora_path))
+    if not lora_path:
+        return QwenGenerator(), None
+    shared = QwenGenerator(adapter_path=str(lora_path))
+    _empty_cuda_cache()
+    return _BaseGenerator(shared), shared
+
+
+def _empty_cuda_cache():
+    """Drop cached blocks. No-op when there is no GPU."""
+    import torch
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def run_suite(args):
     """One command for every results-table row the weights can support.
 
@@ -375,8 +405,7 @@ def run_suite(args):
         from sentence_transformers import CrossEncoder
 
         reranker_model = CrossEncoder(str(reranker_dir))
-    lora_generator = QwenGenerator(adapter_path=str(lora)) if lora else None
-    generator = None if args.retrieval_only else QwenGenerator()
+    generator, lora_generator = suite_generators(lora, args.retrieval_only)
 
     # --limit covers the table and every row, including a retrieval-only suite.
     smoke = bool(args.smoke) or suite_is_smoke(args.limit)
@@ -436,7 +465,7 @@ def main():
     parser.add_argument("--retrieval-only", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--smoke-size", type=int, default=30)
-    parser.add_argument("--limit", type=int, default=0, help="score only the first N reviewed rows")
+    parser.add_argument("--limit", type=int, default=0, help="score only the first N rows")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--bootstrap", type=int, default=1000)
     parser.add_argument("--embed-model", default="", help="Fine-tuned embedding directory. Default for --suite is models/embed.")
@@ -473,14 +502,15 @@ def main():
             rows = rows[: args.limit]
         output = Path(args.output or ("results/e3.json" if args.lora else "results/baseline.json"))
 
-    generator = None if args.retrieval_only else QwenGenerator()
     lora_generator = None
     if args.lora:
         if args.retrieval_only:
             raise SystemExit("--lora scores a generator, so it cannot be combined with --retrieval-only.")
         if not Path(args.lora).is_dir():
             raise SystemExit(f"LoRA adapter not found: {args.lora}")
-        lora_generator = QwenGenerator(adapter_path=args.lora)
+        generator, lora_generator = suite_generators(args.lora, retrieval_only=False)
+    else:
+        generator = None if args.retrieval_only else QwenGenerator()
     judge = _make_judge() if generator is not None else None
 
     summary = run(
