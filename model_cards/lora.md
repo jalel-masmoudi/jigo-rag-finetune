@@ -10,8 +10,9 @@ tags:
 # QLoRA adapter for Qwen2.5-1.5B-Instruct
 
 Adapter for `Qwen/Qwen2.5-1.5B-Instruct`. The base model is Apache 2.0.
-This card is a template. Fill the metrics from a real `eval.py` run
-that loads this adapter. Do not write a smoke-run number here.
+The numbers are from `results/table.json` on 350 filtered test questions
+(1,000 bootstrap resamples, seed 42). The judge cell is empty because
+no Gemini key was set for that run.
 
 ## Training
 
@@ -31,8 +32,11 @@ Answer a question from retrieved handbook passages. Reply with exactly `not foun
 
 | | Exact match | Token F1 | Judge | n |
 | --- | --- | --- | --- | --- |
-| Filtered test set, same retrieved context as the baseline |  |  |  |  |
+| LoRA on the baseline retriever | 0.380 (0.323–0.431) | 0.583 (0.539–0.624) | null | 350 |
+| Full pipeline (fine-tuned retriever, reranker, LoRA) | 0.454 (0.400–0.506) | 0.663 (0.621–0.701) | null | 350 |
+
+The training loss log starts at 2.696 and ends at 0.050 over 2,332 steps. About 4.2 GB was observed in nvidia-smi during training. That figure is approximate. It is not a logged peak, and the process did not spill into system RAM (`results/run_memory.json`).
 
 ## Limitations
 
-The adapter was trained to copy a short answer out of one passage, and to refuse on a passage from a different page. It was not trained on multi-hop questions. The judge, when it is run, is a Gemini model and is a second opinion, not a proof.
+The adapter was trained to copy a short answer out of one passage, and to refuse on a passage from a different page. It was not trained on multi-hop questions. Training used 1,166 of the planned 1,440 rows. The test set was not reviewed by hand. After the adapter was saved, the process exited with a Windows access violation (0xC0000005). The saved adapter was complete, and the scores above were measured in a separate eval. The judge, when it is run, is a Gemini model and is a second opinion, not a proof.

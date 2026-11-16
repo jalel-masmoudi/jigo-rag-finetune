@@ -1,6 +1,6 @@
 # jigo-rag-finetune
 
-This repository fine-tunes a retriever and a generator for retrieval-augmented answering over enterprise-style documents. The corpus is the public-domain GSA TTS Handbook plus the markdown documentation from Jigo AI Workspace. Documents are chunked, split so that no document is in two sets, and the test questions are the Gemini questions that pass `auto_filter_test.py`. They are not hand-reviewed. The baseline is `BAAI/bge-small-en-v1.5` with FAISS and `Qwen/Qwen2.5-1.5B-Instruct`. Later steps fine-tune the embedding model, add a cross-encoder reranker, and adapt the generator with QLoRA. A small FastAPI service exposes the pipeline. Every number in the table below has to come from a real run on `data/test_reviewed.jsonl`. The cells are empty because that run has not happened.
+This repository fine-tunes a retriever and a generator for retrieval-augmented answering over enterprise-style documents. The corpus is the public-domain GSA TTS Handbook plus the markdown documentation from Jigo AI Workspace. Documents are chunked, split so that no document is in two sets, and the test questions are the Gemini questions that pass `auto_filter_test.py`. They are not hand-reviewed. The baseline is `BAAI/bge-small-en-v1.5` with FAISS and `Qwen/Qwen2.5-1.5B-Instruct`. Later steps fine-tune the embedding model, add a cross-encoder reranker, and adapt the generator with QLoRA. A small FastAPI service exposes the pipeline. The numbers below are from one run on an RTX 4060 (8 GB, Windows), scored on `data/test_reviewed.jsonl` (350 questions). Smoke files under `results/smoke_*.json` are sanity checks and are not in the table.
 
 ## Architecture
 
@@ -8,14 +8,50 @@ A question is embedded with bge-small and compared to every chunk (FAISS, exact 
 
 ## Results
 
-Fill this table from `results/*.json` after `python run_gpu.py` on a GPU, and only from files whose `"smoke"` field is absent or false. The smoke files are sanity checks. They are not results.
+From `results/table.json`. Each quality score is the mean and a 95% bootstrap interval (1,000 resamples, seed 42, n = 350). Latency is milliseconds. The judge score is null: no Gemini key was set on the training machine.
 
-| Setup | Recall@5 | MRR@10 | Answer F1 | Judge score | p95 latency |
-| --- | --- | --- | --- | --- | --- |
-| Baseline | | | | | |
-| + fine-tuned embeddings | | | | | |
-| + reranker | | | | | |
-| + LoRA generator (full) | | | | | |
+The LoRA-generator row is the adapted generator on the baseline retriever. That object in `table.json` stores the generator scores only, so Recall and MRR are not repeated there. The full row uses the fine-tuned retriever, the reranker, and the adapted generator. Its retrieval numbers match the reranker row because those two rows share that retriever.
+
+| Setup | Recall@1 | Recall@5 | MRR@10 | Exact match | Token F1 | p50 ms | p95 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | 0.463 (0.411–0.511) | 0.760 (0.717–0.803) | 0.586 (0.544–0.628) | 0.180 (0.137–0.220) | 0.452 (0.412–0.493) | 735.3 | 2408.1 |
+| Fine-tuned embeddings | 0.526 (0.471–0.580) | 0.851 (0.814–0.886) | 0.664 (0.623–0.701) | 0.177 (0.134–0.217) | 0.465 (0.426–0.504) | 829.4 | 2195.1 |
+| Reranker | 0.820 (0.780–0.857) | 0.929 (0.900–0.954) | 0.869 (0.838–0.899) | 0.197 (0.157–0.243) | 0.514 (0.475–0.550) | 1162.0 | 2156.8 |
+| LoRA generator |  |  |  | 0.380 (0.323–0.431) | 0.583 (0.539–0.624) | 975.5 | 2212.3 |
+| Full | 0.820 (0.780–0.857) | 0.929 (0.900–0.954) | 0.869 (0.838–0.899) | 0.454 (0.400–0.506) | 0.663 (0.621–0.701) | 1292.8 | 2512.8 |
+
+### Embedding validation grid
+
+From `results/embed.json`. The selected run is learning rate 5e-5 for 3 epochs (`models/embed-lr5e-05-ep3`). On the test set that checkpoint has Recall@5 0.851 (0.814–0.886) and MRR@10 0.664 (0.623–0.701). Against the baseline retriever the paired gain is +0.091 Recall@5 (0.049–0.131) and +0.078 MRR@10 (0.044–0.110).
+
+| Learning rate | Epochs | Validation Recall@5 |
+| ---: | ---: | ---: |
+| 2e-5 | 1 | 0.760 |
+| 2e-5 | 2 | 0.760 |
+| 2e-5 | 3 | 0.765 |
+| 5e-5 | 1 | 0.785 |
+| 5e-5 | 2 | 0.790 |
+| 5e-5 | 3 | 0.810 |
+
+### Reranker on the two retrievers
+
+From `results/reranker.json`. Depth 20. The reranker is the same model in both rows. The retriever underneath changes.
+
+| Retriever | Recall@5 | MRR@10 |
+| --- | ---: | ---: |
+| Baseline | 0.877 (0.843–0.909) | 0.815 (0.778–0.850) |
+| Fine-tuned | 0.929 (0.900–0.954) | 0.869 (0.838–0.899) |
+
+Memory for the three training stages is in `results/run_memory.json`.
+
+## Caveats
+
+- Training used 1,166 of the planned 1,440 synthetic QA rows. Gemini free-tier generation stalled on quota and server errors.
+- The test set is 350 of 360 after `auto_filter_test.py`. Five questions referred to the text, and five had answers that were not in the chunk. It was not reviewed by hand.
+- The LLM-judge score is null because no Gemini key was set on the training PC.
+- The reranker ran at batch 4 instead of 8, with no gradient accumulation, because batch 8 spilled past 8 GB of VRAM on Windows.
+- The LoRA process exited with a Windows access violation (0xC0000005) after saving the adapter. The adapter was complete, so the eval was run separately.
+- The reranker row and the full row share the same retriever, so their retrieval metrics are identical.
 
 ## Data
 
@@ -72,7 +108,7 @@ pip install -r requirements.txt bitsandbytes
 python run_gpu.py
 ```
 
-`run_gpu.py` trains the embedding model, then the reranker, then the QLoRA generator. If one of those steps fails, it still runs `python eval.py --suite` so the rows for the steps that finished are written, and then it exits with the list of failures. `--suite` writes `results/table.json`. Any run that passes `--limit`, including `--retrieval-only` and each row inside the suite file, is marked `"smoke": true` and is not a full test-set result. `notebooks/free_gpu.ipynb` is the same command. Install `bitsandbytes` there. Model-card templates are in `model_cards/`. Their metric cells are empty on purpose.
+`run_gpu.py` trains the embedding model, then the reranker, then the QLoRA generator. If one of those steps fails, it still runs `python eval.py --suite` so the rows for the steps that finished are written, and then it exits with the list of failures. `--suite` writes `results/table.json`. Any run that passes `--limit`, including `--retrieval-only` and each row inside the suite file, is marked `"smoke": true` and is not a full test-set result. `notebooks/free_gpu.ipynb` is the same command. Install `bitsandbytes` there. Model cards are in `model_cards/`. The numbers in this file and in those cards are from the run recorded under `results/`.
 
 ## Service
 
@@ -99,4 +135,4 @@ python -m venv .venv
 
 ## Limitations
 
-The questions are written by a model from a single chunk. The test set is those questions after `auto_filter_test.py`, not a hand review. Splitting by document stops a page from sitting in both train and test; it does not stop two pages from saying the same fact. The embedding model adds `[CLS]` and `[SEP]`, so the last token or two of a full 512-token window can be dropped at retrieval time. No official score is in this file yet.
+The questions are written by a model from a single chunk. The test set is those questions after `auto_filter_test.py`, not a hand review. Splitting by document stops a page from sitting in both train and test; it does not stop two pages from saying the same fact. The embedding model adds `[CLS]` and `[SEP]`, so the last token or two of a full 512-token window can be dropped at retrieval time. The caveats above apply to the numbers in this file.

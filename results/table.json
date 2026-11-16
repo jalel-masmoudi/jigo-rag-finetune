@@ -1,0 +1,256 @@
+{
+  "smoke": false,
+  "seed": 42,
+  "rows": {
+    "baseline": {
+      "recall@1": {
+        "mean": 0.46285714285714286,
+        "ci_low": 0.4114285714285714,
+        "ci_high": 0.5114285714285715,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "recall@5": {
+        "mean": 0.76,
+        "ci_low": 0.7171428571428572,
+        "ci_high": 0.8028571428571428,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "mrr@10": {
+        "mean": 0.5858843537414966,
+        "ci_low": 0.5435532879818594,
+        "ci_high": 0.6280646258503402,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "exact_match": {
+        "mean": 0.18,
+        "ci_low": 0.13714285714285715,
+        "ci_high": 0.22,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "token_f1": {
+        "mean": 0.4524737062326595,
+        "ci_low": 0.4124500998661527,
+        "ci_high": 0.4927430764457059,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "latency_ms": {
+        "p50": 735.2834999983315,
+        "p95": 2408.1351999993785,
+        "n": 350
+      },
+      "tokens_per_query": 2299.42,
+      "seed": 42,
+      "smoke": false,
+      "n": 350,
+      "n_chunks_indexed": 775
+    },
+    "finetuned_embeddings": {
+      "recall@1": {
+        "mean": 0.5257142857142857,
+        "ci_low": 0.4714285714285714,
+        "ci_high": 0.58,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "recall@5": {
+        "mean": 0.8514285714285714,
+        "ci_low": 0.8142857142857143,
+        "ci_high": 0.8857142857142857,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "mrr@10": {
+        "mean": 0.663515873015873,
+        "ci_low": 0.6230238095238095,
+        "ci_high": 0.7014931972789116,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "exact_match": {
+        "mean": 0.17714285714285713,
+        "ci_low": 0.13428571428571429,
+        "ci_high": 0.21714285714285714,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "token_f1": {
+        "mean": 0.4652569157413924,
+        "ci_low": 0.4260148940431201,
+        "ci_high": 0.5043868982749862,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "latency_ms": {
+        "p50": 829.4136999975308,
+        "p95": 2195.0781000050483,
+        "n": 350
+      },
+      "tokens_per_query": 2279.405714285714,
+      "seed": 42,
+      "smoke": false,
+      "n": 350,
+      "n_chunks_indexed": 775
+    },
+    "reranker": {
+      "recall@1": {
+        "mean": 0.82,
+        "ci_low": 0.78,
+        "ci_high": 0.8571428571428571,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "recall@5": {
+        "mean": 0.9285714285714286,
+        "ci_low": 0.9,
+        "ci_high": 0.9542857142857143,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "mrr@10": {
+        "mean": 0.8692732426303855,
+        "ci_low": 0.8380317460317461,
+        "ci_high": 0.8988367346938776,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "exact_match": {
+        "mean": 0.19714285714285715,
+        "ci_low": 0.15714285714285714,
+        "ci_high": 0.24285714285714285,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "token_f1": {
+        "mean": 0.5138842190882662,
+        "ci_low": 0.47466132073416695,
+        "ci_high": 0.5500965694577277,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "latency_ms": {
+        "p50": 1161.9800999978906,
+        "p95": 2156.8317000055686,
+        "n": 350
+      },
+      "tokens_per_query": 2253.094285714286,
+      "seed": 42,
+      "smoke": false,
+      "n": 350,
+      "n_chunks_indexed": 775
+    },
+    "lora_generator": {
+      "seed": 42,
+      "exact_match": {
+        "mean": 0.38,
+        "ci_low": 0.32285714285714284,
+        "ci_high": 0.43142857142857144,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "token_f1": {
+        "mean": 0.5825786955184541,
+        "ci_low": 0.5391504744123775,
+        "ci_high": 0.6238482243128554,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "latency_ms": {
+        "p50": 975.5489000017405,
+        "p95": 2212.3188999976264,
+        "n": 350
+      },
+      "smoke": false,
+      "adapter": "models\\lora",
+      "config": {
+        "r": 16,
+        "lora_alpha": 32,
+        "target_modules": [
+          "gate_proj",
+          "q_proj",
+          "up_proj",
+          "o_proj",
+          "k_proj",
+          "v_proj",
+          "down_proj"
+        ],
+        "base_model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct"
+      },
+      "base_model": "Qwen/Qwen2.5-1.5B-Instruct"
+    },
+    "full": {
+      "recall@1": {
+        "mean": 0.82,
+        "ci_low": 0.78,
+        "ci_high": 0.8571428571428571,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "recall@5": {
+        "mean": 0.9285714285714286,
+        "ci_low": 0.9,
+        "ci_high": 0.9542857142857143,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "mrr@10": {
+        "mean": 0.8692732426303855,
+        "ci_low": 0.8380317460317461,
+        "ci_high": 0.8988367346938776,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "exact_match": {
+        "mean": 0.4542857142857143,
+        "ci_low": 0.4,
+        "ci_high": 0.5057142857142857,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "token_f1": {
+        "mean": 0.6626006325282624,
+        "ci_low": 0.6214560266774308,
+        "ci_high": 0.7014510455110045,
+        "n": 350,
+        "n_resamples": 1000,
+        "seed": 42
+      },
+      "latency_ms": {
+        "p50": 1292.8065999949467,
+        "p95": 2512.815900001442,
+        "n": 350
+      },
+      "tokens_per_query": 2243.214285714286,
+      "seed": 42,
+      "smoke": false,
+      "n": 350,
+      "n_chunks_indexed": 775
+    }
+  },
+  "note": "A null row means the weights for that setup were not on disk. It is not a score of zero."
+}
