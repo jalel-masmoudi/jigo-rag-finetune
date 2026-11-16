@@ -49,7 +49,7 @@ python train_embed.py --smoke
 
 ## Reranker
 
-`train_reranker.py` fine-tunes `BAAI/bge-reranker-base` with binary cross-entropy on those pairs. Evaluation retrieves 20 passages and reorders them. Recall@5 is measured on the new order. There is no learning-rate sweep.
+`train_reranker.py` fine-tunes `BAAI/bge-reranker-base` with binary cross-entropy on those pairs. The training batch size is 4 (`--batch-size`). Batch 8 did not fit an 8 GB GPU. Evaluation retrieves 20 passages and reorders them. Recall@5 is measured on the new order. There is no learning-rate sweep.
 
 ```bash
 python train_reranker.py --smoke

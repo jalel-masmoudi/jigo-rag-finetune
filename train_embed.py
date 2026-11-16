@@ -99,8 +99,8 @@ def train_one(rows, learning_rate, epochs, output_dir, max_steps=None, batch_siz
         per_device_train_batch_size=batch_size,
         # A duplicate query in one batch would be treated as a negative of itself.
         batch_sampler=BatchSamplers.NO_DUPLICATES,
-        # Batch 16 at 512 tokens needs more than 6.5 GB of activations
-        # without this, which does not fit an 8 GB card. Same gradients, slower step.
+        # With gradient checkpointing, batch 16 peaked at 4324 MiB
+        # whole-GPU in nvidia-smi on a 4060, desktop included.
         gradient_checkpointing=True,
         dataloader_pin_memory=False,
         dataloader_num_workers=0,

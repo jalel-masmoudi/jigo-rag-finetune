@@ -102,7 +102,7 @@ def _search_for(rows, corpus):
                 for chunk in train_corpus
             ][:k]
 
-        return train_corpus, demo_search
+        return train_corpus, demo_search, None
     from jigo_rag.retriever import FaissRetriever
 
     retriever = FaissRetriever().build(train_corpus)
@@ -110,12 +110,12 @@ def _search_for(rows, corpus):
     def search(question, k):
         return retriever.search(question, k=k)
 
-    return train_corpus, search
+    return train_corpus, search, retriever
 
 
 def check_data():
     rows, corpus = load_training_rows()
-    train_corpus, search = _search_for(rows, corpus)
+    train_corpus, search, _retriever = _search_for(rows, corpus)
     examples = build_examples(rows, train_corpus, search)
     kinds = {example["kind"] for example in examples}
     counts = {
@@ -162,6 +162,28 @@ def append_loss(csv_path, step, loss, seed):
         handle.write(f"{step},{loss},{seed}\n")
 
 
+def answer_token_loss(model, input_ids, attention_mask, labels):
+    """Cross-entropy on the answer tokens only.
+
+    A prompt position is already labeled -100, and the full causal loss
+    ignores those positions. The logit at index i predicts the label at
+    i + 1, so only those hidden states are projected onto the vocabulary.
+    The mean over the remaining tokens is the same number.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    keep = torch.zeros(labels.shape, dtype=torch.bool, device=labels.device)
+    keep[:, :-1] = labels[:, 1:] != -100
+    logits = model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        logits_to_keep=keep,
+    ).logits
+    target = labels[:, 1:][keep[:, :-1]]
+    return F.cross_entropy(logits.float(), target)
+
+
 def train():
     import torch
 
@@ -180,8 +202,16 @@ def train():
     rows, corpus = load_training_rows()
     if rows[0]["doc_id"].startswith("demo/"):
         raise SystemExit("Refusing to train on the demo example. Run generate_qa.py first.")
-    train_corpus, search = _search_for(rows, corpus)
+    train_corpus, search, retriever = _search_for(rows, corpus)
     examples = build_examples(rows, train_corpus, search)
+    # The retriever is only needed to build the examples. Leaving it on
+    # the GPU crowds out the Qwen weights.
+    del search, retriever
+    import gc
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     tokenizer = AutoTokenizer.from_pretrained(GENERATOR_MODEL)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -203,7 +233,7 @@ def train():
     for epoch in range(1):
         for step, batch in enumerate(loader, start=1):
             batch = {key: value.to(model.device) for key, value in batch.items()}
-            loss = model(**batch).loss
+            loss = answer_token_loss(model, batch["input_ids"], batch["attention_mask"], batch["labels"])
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
