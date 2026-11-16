@@ -1,0 +1,42 @@
+{
+  "smoke": false,
+  "seed": 42,
+  "model": "BAAI/bge-reranker-base",
+  "rerank_depth": 20,
+  "baseline_retriever": {
+    "test_recall@5": {
+      "mean": 0.8771428571428571,
+      "ci_low": 0.8428571428571429,
+      "ci_high": 0.9085714285714286,
+      "n": 350,
+      "n_resamples": 1000,
+      "seed": 42
+    },
+    "test_mrr@10": {
+      "mean": 0.81521768707483,
+      "ci_low": 0.7784353741496599,
+      "ci_high": 0.8500952380952381,
+      "n": 350,
+      "n_resamples": 1000,
+      "seed": 42
+    }
+  },
+  "finetuned_retriever": {
+    "test_recall@5": {
+      "mean": 0.9285714285714286,
+      "ci_low": 0.9,
+      "ci_high": 0.9542857142857143,
+      "n": 350,
+      "n_resamples": 1000,
+      "seed": 42
+    },
+    "test_mrr@10": {
+      "mean": 0.8692732426303855,
+      "ci_low": 0.8380317460317461,
+      "ci_high": 0.8988367346938776,
+      "n": 350,
+      "n_resamples": 1000,
+      "seed": 42
+    }
+  }
+}

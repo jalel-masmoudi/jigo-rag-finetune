@@ -1,0 +1,33 @@
+{
+  "machine": "RTX 4060, 8 GB, Windows",
+  "embed": {
+    "nvidia_smi_whole_gpu_peak_mib": 4324,
+    "batch_size": 16,
+    "gradient_checkpointing": true,
+    "max_seq_length": 512,
+    "note": "Whole-GPU peak, desktop included."
+  },
+  "reranker": {
+    "torch_max_allocated_mib": 4619,
+    "torch_max_reserved_mib": 5566,
+    "batch_size": 4,
+    "dtype": "fp32",
+    "epochs": 1,
+    "learning_rate": 2e-05,
+    "steps": 1166,
+    "seconds": 375
+  },
+  "lora": {
+    "nvidia_smi_observed_gb": 4.2,
+    "observed": true,
+    "approximate": true,
+    "logged_peak": false,
+    "sysmem_spill": false,
+    "steps_per_minute_approx": 22,
+    "steps": 2332,
+    "epochs": 1,
+    "first_step_loss": 2.696,
+    "last_step_loss": 0.05,
+    "note": "About 4.2 GB was observed in nvidia-smi during training. It is not a logged peak."
+  }
+}
