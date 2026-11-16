@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-cpu.txt
+            requirements.txt
+
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # requirements-cpu.txt selects the CPU index so pip does not take a CUDA wheel.
+          pip install -r requirements-cpu.txt
+          pip install -r requirements.txt
+          python -c "import torch; assert '+cpu' in torch.__version__ and torch.version.cuda is None, torch.__version__"
+          pip install ruff==0.17.5
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          HF_DATASETS_OFFLINE: "1"
+        run: python -m pytest

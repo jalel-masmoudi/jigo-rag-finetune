@@ -1,5 +1,9 @@
 """Not-found contexts and the collate the training loop actually calls."""
 
+import os
+
+import pytest
+
 from jigo_rag.generator import NOT_FOUND
 from jigo_rag.lora_data import build_examples, collate_for_training, contexts_for_row, with_answer
 
@@ -256,6 +260,10 @@ def test_answer_token_loss_matches_the_full_logits_loss():
     assert torch.allclose(full, sliced, atol=1e-5, rtol=1e-5)
 
 
+@pytest.mark.skipif(
+    os.environ.get("GITHUB_ACTIONS") == "true",
+    reason="CI does not download model files; this test loads Qwen/Qwen2.5-1.5B-Instruct from Hugging Face",
+)
 def test_real_qwen_tokenizer_collates_committed_top5_examples():
     import json
     from pathlib import Path
