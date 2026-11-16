@@ -1,5 +1,9 @@
 """Chunk windows stay within 512 tokens and share a 64-token overlap."""
 
+import os
+
+import pytest
+
 from jigo_rag.chunk import chunk_text, chunk_token_ids, load_tokenizer
 from jigo_rag.config import CHUNK_OVERLAP, CHUNK_SIZE
 
@@ -25,6 +29,10 @@ def test_short_and_empty_documents():
     assert chunk_token_ids(short) == [short]
 
 
+@pytest.mark.skipif(
+    os.environ.get("GITHUB_ACTIONS") == "true",
+    reason="CI does not download model files; this test loads BAAI/bge-small-en-v1.5 from Hugging Face",
+)
 def test_real_tokenizer_reports_the_cut_size():
     tokenizer = load_tokenizer()
     text = "Employees request travel in Concur before they leave. " * 400

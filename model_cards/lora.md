@@ -32,8 +32,8 @@ Answer a question from retrieved handbook passages. Reply with exactly `not foun
 
 | | Exact match | Token F1 | Judge | n |
 | --- | --- | --- | --- | --- |
-| LoRA on the baseline retriever | 0.380 (0.323–0.431) | 0.583 (0.539–0.624) | null | 350 |
-| Full pipeline (fine-tuned retriever, reranker, LoRA) | 0.454 (0.400–0.506) | 0.663 (0.621–0.701) | null | 350 |
+| LoRA on the baseline retriever | 0.380 (0.323–0.431) | 0.583 (0.539–0.624) | not computed | 350 |
+| Full pipeline (fine-tuned retriever, reranker, LoRA) | 0.454 (0.400–0.506) | 0.663 (0.621–0.701) | not computed | 350 |
 
 The training loss log starts at 2.696 and ends at 0.050 over 2,332 steps. About 4.2 GB was observed in nvidia-smi during training. That figure is approximate. It is not a logged peak, and the process did not spill into system RAM (`results/run_memory.json`).
 

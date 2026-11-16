@@ -1,3 +1,5 @@
+[![CI](https://github.com/jalel-masmoudi/jigo-rag-finetune/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jalel-masmoudi/jigo-rag-finetune/actions/workflows/ci.yml)
+
 # jigo-rag-finetune
 
 This repository fine-tunes a retriever and a generator for retrieval-augmented answering over enterprise-style documents. The corpus is the public-domain GSA TTS Handbook plus the markdown documentation from Jigo AI Workspace. Documents are chunked, split so that no document is in two sets, and the test questions are the Gemini questions that pass `auto_filter_test.py`. They are not hand-reviewed. The baseline is `BAAI/bge-small-en-v1.5` with FAISS and `Qwen/Qwen2.5-1.5B-Instruct`. Later steps fine-tune the embedding model, add a cross-encoder reranker, and adapt the generator with QLoRA. A small FastAPI service exposes the pipeline. The numbers below are from one run on an RTX 4060 (8 GB, Windows), scored on `data/test_reviewed.jsonl` (350 questions). Smoke files under `results/smoke_*.json` are sanity checks and are not in the table.
@@ -8,7 +10,7 @@ A question is embedded with bge-small and compared to every chunk (FAISS, exact 
 
 ## Results
 
-From `results/table.json`. Each quality score is the mean and a 95% bootstrap interval (1,000 resamples, seed 42, n = 350). Latency is milliseconds. The judge score is null: no Gemini key was set on the training machine.
+From `results/table.json`. Each quality score is the mean and a 95% bootstrap interval (1,000 resamples, seed 42, n = 350). Latency is milliseconds. The judge score is not computed: no Gemini key was set on the training machine.
 
 The LoRA-generator row is the adapted generator on the baseline retriever. That object in `table.json` stores the generator scores only, so Recall and MRR are not repeated there. The full row uses the fine-tuned retriever, the reranker, and the adapted generator. Its retrieval numbers match the reranker row because those two rows share that retriever.
 
@@ -48,7 +50,7 @@ Memory for the three training stages is in `results/run_memory.json`.
 
 - Training used 1,166 of the planned 1,440 synthetic QA rows. Gemini free-tier generation stalled on quota and server errors.
 - The test set is 350 of 360 after `auto_filter_test.py`. Five questions referred to the text, and five had answers that were not in the chunk. It was not reviewed by hand.
-- The LLM-judge score is null because no Gemini key was set on the training PC.
+- The LLM-judge score is not computed because no Gemini key was set on the training PC.
 - The reranker ran at batch 4 instead of 8, with no gradient accumulation, because batch 8 spilled past 8 GB of VRAM on Windows.
 - The LoRA process exited with a Windows access violation (0xC0000005) after saving the adapter. The adapter was complete, so the eval was run separately.
 - The reranker row and the full row share the same retriever, so their retrieval metrics are identical.
