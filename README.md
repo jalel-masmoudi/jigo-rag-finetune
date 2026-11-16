@@ -1,4 +1,4 @@
-[![CI](https://github.com/jalel-masmoudi/jigo-rag-finetune/actions/workflows/ci.yml/badge.svg)](https://github.com/jalel-masmoudi/jigo-rag-finetune/actions/workflows/ci.yml)
+[![CI](https://github.com/jalel-masmoudi/jigo-rag-finetune/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jalel-masmoudi/jigo-rag-finetune/actions/workflows/ci.yml)
 
 # jigo-rag-finetune
 
@@ -10,7 +10,7 @@ A question is embedded with bge-small and compared to every chunk (FAISS, exact 
 
 ## Results
 
-From `results/table.json`. Each quality score is the mean and a 95% bootstrap interval (1,000 resamples, seed 42, n = 350). Latency is milliseconds. The judge score is null: no Gemini key was set on the training machine.
+From `results/table.json`. Each quality score is the mean and a 95% bootstrap interval (1,000 resamples, seed 42, n = 350). Latency is milliseconds. The judge score is not computed: no Gemini key was set on the training machine.
 
 The LoRA-generator row is the adapted generator on the baseline retriever. That object in `table.json` stores the generator scores only, so Recall and MRR are not repeated there. The full row uses the fine-tuned retriever, the reranker, and the adapted generator. Its retrieval numbers match the reranker row because those two rows share that retriever.
 
