@@ -58,7 +58,7 @@ class QwenGenerator:
         self.model.eval()
         return self
 
-    def answer(self, question, passages, max_new_tokens=128):
+    def answer(self, question, passages, max_new_tokens=128, disable_adapter=False):
         import torch
 
         if self.model is None:
@@ -69,12 +69,22 @@ class QwenGenerator:
         )
         device = next(self.model.parameters()).device
         inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
-        with torch.no_grad():
-            output = self.model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-            )
+
+        def generate():
+            with torch.no_grad():
+                return self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                )
+
+        # Same prompt and the same greedy settings. The adapter is off
+        # only for the base-generator rows of a suite that also scores LoRA.
+        if disable_adapter:
+            with self.model.disable_adapter():
+                output = generate()
+        else:
+            output = generate()
         new_tokens = output[0][inputs["input_ids"].shape[1] :]
         text = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
         return {

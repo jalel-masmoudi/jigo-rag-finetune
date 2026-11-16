@@ -26,6 +26,7 @@ from jigo_rag.metrics import bootstrap_mean_ci, mrr_at_k, recall_at_k
 from jigo_rag.negatives import mine_hard_negatives
 from jigo_rag.rerank import RERANK_DEPTH, RERANKER_MODEL, labeled_pairs, rerank
 from jigo_rag.retriever import FaissRetriever
+from jigo_rag.schema import require_review_actions
 
 
 def load_corpus():
@@ -131,7 +132,7 @@ def main():
             "Generate questions, then run python auto_filter_test.py."
         )
     train_rows = read_jsonl(train_path)
-    test_rows = read_jsonl(reviewed)
+    test_rows = require_review_actions(read_jsonl(reviewed))
     corpus = load_corpus()
     train_chunks = [chunk for chunk in corpus if chunk.get("split") == "train"]
     # Negatives are training chunks. The test set is only for scoring.

@@ -41,6 +41,29 @@ def test_exact_match_and_token_f1():
     assert token_f1("answer", "") == 0
 
 
+def test_base_rows_use_the_disabled_adapter_on_one_model(monkeypatch):
+    import eval as ev
+
+    calls = []
+
+    class Shared:
+        def __init__(self, adapter_path=None):
+            calls.append(("init", adapter_path))
+
+        def answer(self, question, passages, max_new_tokens=128, disable_adapter=False):
+            calls.append(("answer", disable_adapter, max_new_tokens))
+            return {"answer": "base" if disable_adapter else "lora", "prompt_tokens": 1, "completion_tokens": 1}
+
+    monkeypatch.setattr(ev, "QwenGenerator", Shared)
+    base, lora = ev.suite_generators("models/lora", retrieval_only=False)
+    assert calls == [("init", "models/lora")]
+    assert base.answer("q", ["p"])["answer"] == "base"
+    assert lora.answer("q", ["p"], max_new_tokens=128)["answer"] == "lora"
+    assert calls[1:] == [("answer", True, 128), ("answer", False, 128)]
+    plain, no_lora = ev.suite_generators(None, retrieval_only=True)
+    assert plain is None and no_lora is None
+
+
 def test_suite_limit_is_marked_smoke():
     from eval import suite_is_smoke
 
