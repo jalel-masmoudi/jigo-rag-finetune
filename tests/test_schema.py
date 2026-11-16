@@ -69,6 +69,35 @@ def test_chunk_schema_rejects_bad_rows(bad):
         validate_chunk(_chunk(**bad))
 
 
+def test_require_review_actions_rejects_a_missing_value_and_auto_drop():
+    from jigo_rag.schema import require_review_actions
+    import train_embed
+    import train_reranker
+
+    kept = require_review_actions(
+        [
+            {"row_id": "a#0/q0", "review_action": "keep"},
+            {"row_id": "a#0/q1", "review_action": "fix"},
+            {"row_id": "a#0/q2", "review_action": "auto_keep"},
+        ]
+    )
+    assert len(kept) == 3
+    assert train_embed.require_review_actions is require_review_actions
+    assert train_reranker.require_review_actions is require_review_actions
+    for row in ({"row_id": "b#0/q0"}, {"row_id": "c#0/q0", "review_action": "auto_drop"}):
+        try:
+            require_review_actions([row])
+        except SystemExit as exc:
+            message = str(exc)
+        else:
+            raise AssertionError(f"accepted {row}")
+        assert row["row_id"] in message
+    try:
+        require_review_actions([{"row_id": "c#0/q0", "review_action": "auto_drop"}])
+    except SystemExit as exc:
+        assert "auto_drop" in str(exc)
+
+
 def test_qa_schema_rejects_a_mismatched_gold_id():
     with pytest.raises(ValueError):
         validate_qa(_qa(gold_chunk_id="gsa-handbook/pages/other.md#1"))

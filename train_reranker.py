@@ -7,7 +7,8 @@ binary cross-entropy on the cross-encoder logit.
 At evaluation the baseline retriever returns 20 passages and the
 cross-encoder reorders them. Recall@5 is computed on that order, on
 the filtered test set, once. There is no learning-rate sweep; the
-spec does not ask for one. The learning rate is 2e-5 for one epoch.
+spec does not ask for one. The learning rate is 2e-5 for one epoch. The training batch size is 4.
+Batch 8 did not fit an 8 GB GPU.
 
     python train_reranker.py
     python train_reranker.py --smoke
@@ -51,7 +52,7 @@ def scores_after_rerank(encoder, retriever, questions):
     return recall_scores, mrr_scores
 
 
-def train_one(pair_columns, output_dir, max_steps=None, batch_size=8):
+def train_one(pair_columns, output_dir, max_steps=None, batch_size=4):
     from datasets import Dataset
     from sentence_transformers import CrossEncoder
     from sentence_transformers.cross_encoder.losses import BinaryCrossEntropyLoss
@@ -85,6 +86,12 @@ def train_one(pair_columns, output_dir, max_steps=None, batch_size=8):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=4,
+        help="Training batch size. 4 fits an 8 GB GPU; 8 does not.",
+    )
     args = parser.parse_args()
 
     if args.smoke:
@@ -142,7 +149,7 @@ def main():
         return miner.search(question, k=k)
 
     mined = mine_hard_negatives(train_rows, search, train_chunks, seed=SEED)
-    model = train_one(labeled_pairs(mined), "models/reranker")
+    model = train_one(labeled_pairs(mined), "models/reranker", batch_size=args.batch_size)
     baseline = FaissRetriever().build(corpus)
     base_recall, base_mrr = scores_after_rerank(model, baseline, test_rows)
     report = {

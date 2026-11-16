@@ -372,16 +372,7 @@ def suite_generators(lora_path, retrieval_only):
     if not lora_path:
         return QwenGenerator(), None
     shared = QwenGenerator(adapter_path=str(lora_path))
-    _empty_cuda_cache()
     return _BaseGenerator(shared), shared
-
-
-def _empty_cuda_cache():
-    """Drop cached blocks. No-op when there is no GPU."""
-    import torch
-
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
 
 def run_suite(args):

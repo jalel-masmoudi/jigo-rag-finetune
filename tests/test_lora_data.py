@@ -225,6 +225,37 @@ def test_collate_clips_passages_and_keeps_the_question():
     assert labels[ids.index(question_id)] == -100
 
 
+def test_answer_token_loss_matches_the_full_logits_loss():
+    import torch
+    from transformers import Qwen2Config, Qwen2ForCausalLM
+
+    from train_lora import answer_token_loss
+
+    torch.manual_seed(0)
+    config = Qwen2Config(
+        vocab_size=64,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        max_position_embeddings=32,
+        attention_dropout=0.0,
+    )
+    model = Qwen2ForCausalLM(config)
+    model.eval()
+    input_ids = torch.randint(0, config.vocab_size, (2, 12))
+    labels = input_ids.clone()
+    labels[:, :7] = -100
+    labels[1, 10:] = -100
+    attention_mask = torch.ones_like(input_ids)
+    attention_mask[1, 11] = 0
+    with torch.no_grad():
+        full = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels).loss
+        sliced = answer_token_loss(model, input_ids, attention_mask, labels)
+    assert torch.allclose(full, sliced, atol=1e-5, rtol=1e-5)
+
+
 def test_real_qwen_tokenizer_collates_committed_top5_examples():
     import json
     from pathlib import Path
@@ -316,7 +347,7 @@ def test_train_records_the_seed_and_the_step_loss(tmp_path, monkeypatch):
         {"chunk_id": "handbook/leave.md#0", "doc_id": "handbook/leave.md", "text": "Leave is separate.", "split": "train"},
     ]
     monkeypatch.setattr(train_lora, "load_training_rows", lambda: ([row], corpus))
-    monkeypatch.setattr(train_lora, "_search_for", lambda rows, chunks: (chunks, lambda question, k: chunks))
+    monkeypatch.setattr(train_lora, "_search_for", lambda rows, chunks: (chunks, lambda question, k: chunks, None))
     monkeypatch.setattr(train_lora, "four_bit_config", lambda: object())
 
     class Tok:
@@ -356,13 +387,18 @@ def test_train_records_the_seed_and_the_step_loss(tmp_path, monkeypatch):
             return None
 
         def __iter__(self):
-            yield {"input_ids": torch.zeros(1, 2, dtype=torch.long)}
+            yield {
+                "input_ids": torch.zeros(1, 2, dtype=torch.long),
+                "attention_mask": torch.ones(1, 2, dtype=torch.long),
+                "labels": torch.tensor([[-100, 1]]),
+            }
 
     monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", lambda *args, **kwargs: Tok())
     monkeypatch.setattr(transformers.AutoModelForCausalLM, "from_pretrained", lambda *args, **kwargs: Model())
     monkeypatch.setattr(peft, "prepare_model_for_kbit_training", lambda model: model)
     monkeypatch.setattr(peft, "get_peft_model", lambda model, config: model)
     monkeypatch.setattr(torch.utils.data, "DataLoader", OneBatch)
+    monkeypatch.setattr(train_lora, "answer_token_loss", lambda *args, **kwargs: torch.tensor(0.5, requires_grad=True))
     train_lora.train()
     csv_text = (tmp_path / "results" / "lora_loss.csv").read_text(encoding="utf-8")
     assert csv_text.startswith("step,loss,seed\n")
