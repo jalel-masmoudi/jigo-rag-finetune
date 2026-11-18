@@ -95,7 +95,7 @@ python train_reranker.py --smoke
 
 ## Generator fine-tune
 
-`train_lora.py` adapts Qwen2.5-1.5B-Instruct with QLoRA: rank 16, alpha 32, 4-bit NF4. Each question is trained with the gold chunk, and again with a chunk from another document whose target is `not found`. The loss is only on the answer tokens. 4-bit training needs CUDA.
+`train_lora.py` adapts Qwen2.5-1.5B-Instruct with QLoRA: rank 16, alpha 32, 4-bit NF4. Each question is trained with the gold chunk, and again with a chunk from another document whose target is `not found`. The loss is only on the answer tokens. 4-bit training needs CUDA. The per-step training loss from the RTX 4060 run is in `results/lora_loss.csv` (`step,loss,seed`; 2,332 steps, seed 42). It starts at 2.696 and ends at 0.050.
 
 ```bash
 python train_lora.py --check-data
