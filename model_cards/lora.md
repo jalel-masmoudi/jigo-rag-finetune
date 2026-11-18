@@ -11,7 +11,7 @@ tags:
 
 Adapter for `Qwen/Qwen2.5-1.5B-Instruct`. The base model is Apache 2.0.
 The numbers are from `results/table.json` on 350 filtered test questions
-(1,000 bootstrap resamples, seed 42). The judge cell is empty because
+(1,000 bootstrap resamples, seed 42). The judge is not computed because
 no Gemini key was set for that run.
 
 ## Training

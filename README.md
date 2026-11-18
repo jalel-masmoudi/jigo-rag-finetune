@@ -70,7 +70,7 @@ python auto_filter_test.py
 
 ## Baseline
 
-`eval.py` reports Recall@1, Recall@5, MRR@10, exact match, token F1, a Gemini judge when `GEMINI_API_KEY` is set, p50 and p95 latency, and tokens per query. Quality scores include a 95% bootstrap interval (1,000 resamples, seed 42). Queries use the prefix bge was trained with. Passages do not. The judge rubric is `prompts/judge.txt`. A missing key leaves the judge empty. It is not stored as zero.
+`eval.py` reports Recall@1, Recall@5, MRR@10, exact match, token F1, a Gemini judge when `GEMINI_API_KEY` is set, p50 and p95 latency, and tokens per query. Quality scores include a 95% bootstrap interval (1,000 resamples, seed 42). Queries use the prefix bge was trained with. Passages do not. The judge rubric is `prompts/judge.txt`. A missing key leaves the judge as `null` in the JSON, and the console prints it as not computed. It is not stored as zero.
 
 ```bash
 python eval.py --smoke --smoke-size 30 --retrieval-only

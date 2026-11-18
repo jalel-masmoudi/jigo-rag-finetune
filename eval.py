@@ -17,7 +17,8 @@ A full run writes results/baseline.json. Recall@1, Recall@5, MRR@10,
 exact match, and token F1 each include a 95% bootstrap interval.
 Latency is the per-query p50 and p95. Tokens per query are prompt
 tokens plus completion tokens from the generator. The judge runs only
-when GEMINI_API_KEY is set; otherwise its score is null.
+when GEMINI_API_KEY is set; otherwise it is null in the JSON and
+printed as "not computed".
 """
 
 import argparse
@@ -265,7 +266,7 @@ def _make_judge():
 
     load_dotenv()
     if not judge_available():
-        print("GEMINI_API_KEY is not set. The judge score will be null.")
+        print("GEMINI_API_KEY is not set. The judge score is not computed.")
         return None
     from google import genai
 
@@ -530,7 +531,10 @@ def main():
         summary["judge_note"] = "GEMINI_API_KEY was not set, so no judge score was computed."
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({key: summary[key] for key in summary if key != "note"}, indent=2))
+    printed = {key: summary[key] for key in summary if key != "note"}
+    if "judge" in printed and printed["judge"] is None:
+        printed["judge"] = "not computed"
+    print(json.dumps(printed, indent=2))
     print(f"wrote {output}")
 
 
