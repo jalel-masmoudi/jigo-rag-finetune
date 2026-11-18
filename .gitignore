@@ -52,6 +52,7 @@ data/chunks/
 data/train.jsonl
 data/val.jsonl
 data/test.jsonl
+data/test_filtered.jsonl
 data/test_reviewed.jsonl
 data/test_dropped.jsonl
 data/qa_errors.jsonl

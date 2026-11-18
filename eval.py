@@ -1,13 +1,13 @@
 """Score the baseline retriever and, when asked, the baseline generator.
 
-The test set is data/test_reviewed.jsonl only. data/test.jsonl is raw
+The test set is data/test_filtered.jsonl only. data/test.jsonl is raw
 model output and is refused here.
 
     python eval.py --retrieval-only
     python eval.py
     python eval.py --smoke --smoke-size 30 --retrieval-only
 
-`--smoke` does not read data/test_reviewed.jsonl. It uses the first
+`--smoke` does not read data/test_filtered.jsonl. It uses the first
 sentence of a chunk as the query and the chunk as the gold hit. That
 is a sanity check that the index can find a passage from its own
 words. It is not a number for the results table. The JSON it writes
@@ -47,9 +47,9 @@ from jigo_rag.metrics import (
     token_f1,
 )
 from jigo_rag.retriever import FaissRetriever
-from jigo_rag.schema import require_review_actions
+from jigo_rag.schema import require_review_actions, resolve_test_set
 
-REVIEWED_TEST = Path("data/test_reviewed.jsonl")
+FILTERED_TEST = Path("data/test_filtered.jsonl")
 JUDGE_PROMPT = Path("prompts/judge.txt")
 
 
@@ -62,16 +62,17 @@ def load_corpus():
     return chunks
 
 
-def load_reviewed_test():
-    if not REVIEWED_TEST.exists():
+def load_filtered_test():
+    path = resolve_test_set(FILTERED_TEST)
+    if not path.exists():
         raise SystemExit(
-            "data/test_reviewed.jsonl does not exist. "
+            "data/test_filtered.jsonl does not exist. "
             "Run python auto_filter_test.py. "
             "data/test.jsonl is not the test set."
         )
-    rows = read_jsonl(REVIEWED_TEST)
+    rows = read_jsonl(path)
     if not rows:
-        raise SystemExit("data/test_reviewed.jsonl is empty.")
+        raise SystemExit(f"{path} is empty.")
     return require_review_actions(rows)
 
 
@@ -382,7 +383,7 @@ def run_suite(args):
     Missing weights leave that row null. Nothing is filled in with a guess.
     """
     chunks = load_corpus()
-    rows = load_reviewed_test()
+    rows = load_filtered_test()
     if args.limit:
         rows = rows[: args.limit]
     embed = _present(args.embed_model or "models/embed")
@@ -489,7 +490,7 @@ def main():
         rows = smoke_rows(chunks, args.smoke_size, args.seed)
         output = Path(args.output or "results/smoke_retrieval.json")
     else:
-        rows = load_reviewed_test()
+        rows = load_filtered_test()
         if args.limit:
             rows = rows[: args.limit]
         output = Path(args.output or ("results/e3.json" if args.lora else "results/baseline.json"))

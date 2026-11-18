@@ -16,7 +16,7 @@ from jigo_rag.jsonl import append_jsonl, read_jsonl
 from jigo_rag.schema import validate_qa
 
 TEST_PATH = Path("data/test.jsonl")
-KEPT_PATH = Path("data/test_reviewed.jsonl")
+KEPT_PATH = Path("data/test_filtered.jsonl")
 DROPPED_PATH = Path("data/test_dropped.jsonl")
 
 

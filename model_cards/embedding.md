@@ -11,7 +11,7 @@ tags:
 
 Fine-tune of `BAAI/bge-small-en-v1.5` with MultipleNegativesRankingLoss.
 The base model is MIT licensed. The numbers are from `results/embed.json`
-on `data/test_reviewed.jsonl` (350 questions, 1,000 bootstrap resamples, seed 42).
+on `data/test_filtered.jsonl` (350 questions, 1,000 bootstrap resamples, seed 42).
 That file is the output of `auto_filter_test.py`. It is not hand-reviewed.
 
 ## Training
