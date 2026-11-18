@@ -63,7 +63,7 @@ def main():
             + "\n".join(failed)
             + "\nEval ran afterward for whatever training finished. Read results/."
         )
-    print("Done. Read results/*.json. Leave the README table empty until those files are from data/test_reviewed.jsonl.")
+    print("Done. Read results/*.json. Copy a number into the README only when its file has \"smoke\": false.")
 
 
 if __name__ == "__main__":

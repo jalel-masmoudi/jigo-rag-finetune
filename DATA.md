@@ -84,7 +84,7 @@ Each request asks for several questions about **one** chunk. The script sets `go
 
 Targets: 1,440 train + 200 validation + 360 test = 2,000. Test is generated first, because that file is the one `auto_filter_test.py` reads, and a free-tier daily cap may stop the run. Finished chunks are appended to `data/{train,val,test}.jsonl` and skipped on the next run. Wait between calls with `GEMINI_SLEEP_SECONDS` (default 4). A daily quota error stops the process without deleting what was already written. Run the same command again the next day.
 
-This workspace did not have a `GEMINI_API_KEY`, so that script has not been run. The 20 rows in `data/sample/` are hand-written from real chunks so the file format is visible. Each answer is a copied span of its chunk. They are not model output and they are not the evaluation set.
+For the recorded run, generation stalled on free-tier quota and server errors at 1,166 of the 1,440 training rows; the test split reached 360. Those generated files are gitignored. The 20 rows in `data/sample/` are hand-written from real chunks so the file format is visible. Each answer is a copied span of its chunk. They are not model output and they are not the evaluation set.
 
 ## Test set
 
@@ -100,6 +100,8 @@ A row is dropped for the first of these reasons:
 6. The same chunk already kept a question with that normalized text.
 
 Kept rows are marked `review_action` `auto_keep`. Dropped rows are marked `auto_drop` and include `drop_reason`.
+
+On the recorded run the filter kept 350 of the 360 test questions: five were dropped as `refers_to_text` and five as `answer_not_in_chunk`.
 
 **Only `data/test_reviewed.jsonl` is the test set.** `data/test.jsonl` is raw model output and must not be used for a score. The filtered file is gitignored, same as the other full generated files, because it is produced on your machine and can be large. `eval.py` reads it from disk. When you want that exact filtered set in git, add it with `git add -f data/test_reviewed.jsonl`. The raw generated files and the cloned corpora are gitignored.
 
