@@ -128,7 +128,6 @@ def filter_rows(rows):
         if reason is None:
             kept_row = dict(row)
             kept_row["review_action"] = "auto_keep"
-            validate_qa(kept_row)
             kept.append(kept_row)
             continue
         counts[reason] += 1

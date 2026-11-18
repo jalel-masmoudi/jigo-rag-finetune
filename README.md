@@ -44,7 +44,7 @@ From `results/reranker.json`. Depth 20. The reranker is the same model in both r
 | Baseline | 0.877 (0.843–0.909) | 0.815 (0.778–0.850) |
 | Fine-tuned | 0.929 (0.900–0.954) | 0.869 (0.838–0.899) |
 
-Memory for the three training stages is in `results/run_memory.json`.
+Memory for the three training stages is in `results/run_memory.json`. Those values were entered by hand. No code measured or wrote them.
 
 ## Caveats
 
@@ -52,6 +52,7 @@ Memory for the three training stages is in `results/run_memory.json`.
 - The test set is 350 of 360 after `auto_filter_test.py`. Five questions referred to the text, and five had answers that were not in the chunk. It was not reviewed by hand.
 - The LLM-judge score is not computed because no Gemini key was set on the training PC.
 - The reranker ran at batch 4 instead of 8, with no gradient accumulation, because batch 8 spilled past 8 GB of VRAM on Windows.
+- LoRA peak GPU memory is approximate: about 4.2 GB was seen in nvidia-smi during training. It is not a logged peak (`results/run_memory.json`, entered by hand).
 - The LoRA process exited with a Windows access violation (0xC0000005) after saving the adapter. The adapter was complete, so the eval was run separately.
 - The reranker row and the full row share the same retriever, so their retrieval metrics are identical.
 
@@ -69,7 +70,7 @@ python auto_filter_test.py
 
 ## Baseline
 
-`eval.py` reports Recall@1, Recall@5, MRR@10, exact match, token F1, a Gemini judge when `GEMINI_API_KEY` is set, p50 and p95 latency, and tokens per query. Quality scores include a 95% bootstrap interval (1,000 resamples, seed 42). Queries use the prefix bge was trained with. Passages do not. The judge rubric is `prompts/judge.txt`. A missing key leaves the judge empty. It is not stored as zero.
+`eval.py` reports Recall@1, Recall@5, MRR@10, exact match, token F1, a Gemini judge when `GEMINI_API_KEY` is set, p50 and p95 latency, and tokens per query. Quality scores include a 95% bootstrap interval (1,000 resamples, seed 42). Queries use the prefix bge was trained with. Passages do not. The judge rubric is `prompts/judge.txt`. A missing key leaves the judge as `null` in the JSON, and the console prints it as not computed. It is not stored as zero.
 
 ```bash
 python eval.py --smoke --smoke-size 30 --retrieval-only
@@ -95,7 +96,7 @@ python train_reranker.py --smoke
 
 ## Generator fine-tune
 
-`train_lora.py` adapts Qwen2.5-1.5B-Instruct with QLoRA: rank 16, alpha 32, 4-bit NF4. Each question is trained with the gold chunk, and again with a chunk from another document whose target is `not found`. The loss is only on the answer tokens. 4-bit training needs CUDA.
+`train_lora.py` adapts Qwen2.5-1.5B-Instruct with QLoRA: rank 16, alpha 32, 4-bit NF4. Each question is trained with the gold chunk, and again with a chunk from another document whose target is `not found`. The loss is only on the answer tokens. 4-bit training needs CUDA. The per-step training loss from the RTX 4060 run is in `results/lora_loss.csv` (`step,loss,seed`; 2,332 steps, seed 42). It starts at 2.696 and ends at 0.050.
 
 ```bash
 python train_lora.py --check-data

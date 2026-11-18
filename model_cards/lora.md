@@ -11,7 +11,7 @@ tags:
 
 Adapter for `Qwen/Qwen2.5-1.5B-Instruct`. The base model is Apache 2.0.
 The numbers are from `results/table.json` on 350 filtered test questions
-(1,000 bootstrap resamples, seed 42). The judge cell is empty because
+(1,000 bootstrap resamples, seed 42). The judge is not computed because
 no Gemini key was set for that run.
 
 ## Training
@@ -35,7 +35,7 @@ Answer a question from retrieved handbook passages. Reply with exactly `not foun
 | LoRA on the baseline retriever | 0.380 (0.323–0.431) | 0.583 (0.539–0.624) | not computed | 350 |
 | Full pipeline (fine-tuned retriever, reranker, LoRA) | 0.454 (0.400–0.506) | 0.663 (0.621–0.701) | not computed | 350 |
 
-The training loss log starts at 2.696 and ends at 0.050 over 2,332 steps. About 4.2 GB was observed in nvidia-smi during training. That figure is approximate. It is not a logged peak, and the process did not spill into system RAM (`results/run_memory.json`).
+The training loss log (`results/lora_loss.csv`) starts at 2.696 and ends at 0.050 over 2,332 steps. About 4.2 GB was observed in nvidia-smi during training. That figure is approximate. It is not a logged peak, and the process did not spill into system RAM (`results/run_memory.json`).
 
 ## Limitations
 

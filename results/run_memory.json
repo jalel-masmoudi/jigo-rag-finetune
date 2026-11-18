@@ -1,5 +1,6 @@
 {
   "machine": "RTX 4060, 8 GB, Windows",
+  "note": "Entered by hand from what was seen during the run. No code in this repo measured or wrote these values.",
   "embed": {
     "nvidia_smi_whole_gpu_peak_mib": 4324,
     "batch_size": 16,
