@@ -44,7 +44,7 @@ From `results/reranker.json`. Depth 20. The reranker is the same model in both r
 | Baseline | 0.877 (0.843–0.909) | 0.815 (0.778–0.850) |
 | Fine-tuned | 0.929 (0.900–0.954) | 0.869 (0.838–0.899) |
 
-Memory for the three training stages is in `results/run_memory.json`.
+Memory for the three training stages is in `results/run_memory.json`. Those values were entered by hand. No code measured or wrote them.
 
 ## Caveats
 
@@ -52,6 +52,7 @@ Memory for the three training stages is in `results/run_memory.json`.
 - The test set is 350 of 360 after `auto_filter_test.py`. Five questions referred to the text, and five had answers that were not in the chunk. It was not reviewed by hand.
 - The LLM-judge score is not computed because no Gemini key was set on the training PC.
 - The reranker ran at batch 4 instead of 8, with no gradient accumulation, because batch 8 spilled past 8 GB of VRAM on Windows.
+- LoRA peak GPU memory is approximate: about 4.2 GB was seen in nvidia-smi during training. It is not a logged peak (`results/run_memory.json`, entered by hand).
 - The LoRA process exited with a Windows access violation (0xC0000005) after saving the adapter. The adapter was complete, so the eval was run separately.
 - The reranker row and the full row share the same retriever, so their retrieval metrics are identical.
 
