@@ -1,7 +1,7 @@
 """Build the test set with a fixed filter. No API calls.
 
 Reads data/test.jsonl, the raw Gemini output. Writes the rows that
-pass to data/test_reviewed.jsonl and the rest to data/test_dropped.jsonl.
+pass to data/test_filtered.jsonl and the rest to data/test_dropped.jsonl.
 This is not a hand review. The rules below are the whole decision.
 
 A row is dropped for the first reason that applies:
@@ -20,7 +20,7 @@ A row is dropped for the first reason that applies:
 
 Kept rows get review_action "auto_keep". Dropped rows get
 review_action "auto_drop" and a drop_reason. An existing
-data/test_reviewed.jsonl is left alone unless --force is passed.
+data/test_filtered.jsonl is left alone unless --force is passed.
 
     python auto_filter_test.py
     python auto_filter_test.py --force
@@ -35,7 +35,7 @@ from jigo_rag.metrics import normalize
 from jigo_rag.schema import validate_qa
 
 TEST_PATH = Path("data/test.jsonl")
-KEPT_PATH = Path("data/test_reviewed.jsonl")
+KEPT_PATH = Path("data/test_filtered.jsonl")
 DROPPED_PATH = Path("data/test_dropped.jsonl")
 
 # Printed in this order, including zeros, so a run is easy to compare.
@@ -161,7 +161,7 @@ def print_counts(kept, counts):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--force", action="store_true", help="overwrite an existing test_reviewed.jsonl")
+    parser.add_argument("--force", action="store_true", help="overwrite an existing test_filtered.jsonl")
     args = parser.parse_args()
     if not TEST_PATH.exists():
         raise SystemExit("data/test.jsonl does not exist. Run python generate_qa.py first.")

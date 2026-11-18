@@ -2,7 +2,7 @@
 
 # jigo-rag-finetune
 
-This repository fine-tunes a retriever and a generator for retrieval-augmented answering over enterprise-style documents. The corpus is the public-domain GSA TTS Handbook plus the markdown documentation from Jigo AI Workspace. Documents are chunked, split so that no document is in two sets, and the test questions are the Gemini questions that pass `auto_filter_test.py`. They are not hand-reviewed. The baseline is `BAAI/bge-small-en-v1.5` with FAISS and `Qwen/Qwen2.5-1.5B-Instruct`. Later steps fine-tune the embedding model, add a cross-encoder reranker, and adapt the generator with QLoRA. A small FastAPI service exposes the pipeline. The numbers below are from one run on an RTX 4060 (8 GB, Windows), scored on `data/test_reviewed.jsonl` (350 questions). Smoke files under `results/smoke_*.json` are sanity checks and are not in the table.
+This repository fine-tunes a retriever and a generator for retrieval-augmented answering over enterprise-style documents. The corpus is the public-domain GSA TTS Handbook plus the markdown documentation from Jigo AI Workspace. Documents are chunked, split so that no document is in two sets, and the test questions are the Gemini questions that pass `auto_filter_test.py`. They are not hand-reviewed. The baseline is `BAAI/bge-small-en-v1.5` with FAISS and `Qwen/Qwen2.5-1.5B-Instruct`. Later steps fine-tune the embedding model, add a cross-encoder reranker, and adapt the generator with QLoRA. A small FastAPI service exposes the pipeline. The numbers below are from one run on an RTX 4060 (8 GB, Windows), scored on `data/test_filtered.jsonl` (350 questions). Smoke files under `results/smoke_*.json` are sanity checks and are not in the table.
 
 ## Architecture
 
@@ -66,7 +66,7 @@ python generate_qa.py
 python auto_filter_test.py
 ```
 
-`generate_qa.py` reads `GEMINI_API_KEY` (see `.env.example`). It appends to `data/{train,val,test}.jsonl` and skips chunks already done. `auto_filter_test.py` writes `data/test_reviewed.jsonl` from `data/test.jsonl`. Scores use only that file. The filter is deterministic and does not call an API. A row is dropped when it fails `validate_qa`, when its split is not `test`, when the answer is longer than 40 words, when the question uses a whole phrase such as "the passage" or "this document" (not a bare word), when the normalized answer is not a whole-word span of the normalized chunk, or when the same chunk already kept that normalized question. `DATA.md` lists the same rules.
+`generate_qa.py` reads `GEMINI_API_KEY` (see `.env.example`). It appends to `data/{train,val,test}.jsonl` and skips chunks already done. `auto_filter_test.py` writes `data/test_filtered.jsonl` from `data/test.jsonl`. Scores use only that file. The filter is deterministic and does not call an API. A row is dropped when it fails `validate_qa`, when its split is not `test`, when the answer is longer than 40 words, when the question uses a whole phrase such as "the passage" or "this document" (not a bare word), when the normalized answer is not a whole-word span of the normalized chunk, or when the same chunk already kept that normalized question. `DATA.md` lists the same rules.
 
 ## Baseline
 

@@ -191,17 +191,17 @@ def test_the_same_input_writes_the_same_bytes(tmp_path):
 
 def test_eval_accepts_only_keep_fix_and_auto_keep(tmp_path, monkeypatch):
     from jigo_rag.jsonl import write_jsonl
-    from eval import load_reviewed_test
+    from eval import load_filtered_test
 
-    path = tmp_path / "test_reviewed.jsonl"
-    monkeypatch.setattr("eval.REVIEWED_TEST", path)
+    path = tmp_path / "test_filtered.jsonl"
+    monkeypatch.setattr("eval.FILTERED_TEST", path)
     write_jsonl(path, [_row(review_action="auto_keep"), _row(row_id="gsa-handbook/pages/travel.md#0/q1", review_action="keep")])
-    assert len(load_reviewed_test()) == 2
+    assert len(load_filtered_test()) == 2
     write_jsonl(path, [_row(review_action="fix")])
-    assert load_reviewed_test()[0]["review_action"] == "fix"
+    assert load_filtered_test()[0]["review_action"] == "fix"
     write_jsonl(path, [_row(review_action="auto_drop")])
     try:
-        load_reviewed_test()
+        load_filtered_test()
     except SystemExit as exc:
         message = str(exc)
     else:
@@ -209,9 +209,9 @@ def test_eval_accepts_only_keep_fix_and_auto_keep(tmp_path, monkeypatch):
     assert "auto_drop" in message
 
 
-def test_existing_reviewed_file_is_kept_unless_force(tmp_path):
+def test_existing_filtered_file_is_kept_unless_force(tmp_path):
     source = [_row()]
-    kept_path = tmp_path / "test_reviewed.jsonl"
+    kept_path = tmp_path / "test_filtered.jsonl"
     dropped_path = tmp_path / "test_dropped.jsonl"
     kept_path.write_text('{"row_id": "already"}\n', encoding="utf-8")
     try:
@@ -219,7 +219,7 @@ def test_existing_reviewed_file_is_kept_unless_force(tmp_path):
     except SystemExit as exc:
         message = str(exc)
     else:
-        raise AssertionError("an existing reviewed file was overwritten")
+        raise AssertionError("an existing filtered file was overwritten")
     assert "already exists" in message
     assert kept_path.read_text(encoding="utf-8") == '{"row_id": "already"}\n'
     assert not dropped_path.exists()
@@ -228,3 +228,16 @@ def test_existing_reviewed_file_is_kept_unless_force(tmp_path):
     written = read_jsonl(kept_path)
     assert written[0]["review_action"] == "auto_keep"
     assert read_jsonl(dropped_path) == []
+
+
+def test_old_test_file_name_is_used_when_the_new_one_is_missing(tmp_path, capsys):
+    from jigo_rag.schema import resolve_test_set
+
+    new = tmp_path / "test_filtered.jsonl"
+    old = tmp_path / "test_reviewed.jsonl"
+    assert resolve_test_set(new) == new
+    old.write_text("{}\n", encoding="utf-8")
+    assert resolve_test_set(new) == old
+    assert "old name" in capsys.readouterr().out
+    new.write_text("{}\n", encoding="utf-8")
+    assert resolve_test_set(new) == new

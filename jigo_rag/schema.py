@@ -5,7 +5,11 @@ whose answer is supposed to come from that window. `gold_chunk_id`
 is the chunk id, so a retriever can be scored against it later.
 """
 
+from pathlib import Path
+
 from jigo_rag.config import CHUNK_SIZE
+
+TEST_SET = Path("data/test_filtered.jsonl")
 
 CHUNK_FIELDS = (
     "chunk_id",
@@ -75,7 +79,16 @@ def validate_qa(row):
 ALLOWED_REVIEW_ACTIONS = {"keep", "fix", "auto_keep"}
 
 
-def require_review_actions(rows, source="data/test_reviewed.jsonl"):
+def resolve_test_set(path=TEST_SET):
+    """Return `path`, or the file's old name when only that exists."""
+    old = path.with_name("test_reviewed.jsonl")
+    if not path.exists() and old.exists():
+        print(f"{path} not found, using the old name {old}.")
+        return old
+    return path
+
+
+def require_review_actions(rows, source="data/test_filtered.jsonl"):
     """Reject a test row whose review_action is not one of the three allowed."""
     for row in rows:
         action = row.get("review_action")

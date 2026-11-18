@@ -27,7 +27,7 @@ from jigo_rag.metrics import bootstrap_mean_ci, mrr_at_k, recall_at_k
 from jigo_rag.negatives import mine_hard_negatives
 from jigo_rag.rerank import RERANK_DEPTH, RERANKER_MODEL, labeled_pairs, rerank
 from jigo_rag.retriever import FaissRetriever
-from jigo_rag.schema import require_review_actions
+from jigo_rag.schema import require_review_actions, resolve_test_set
 
 
 def load_corpus():
@@ -132,14 +132,14 @@ def main():
         return
 
     train_path = Path("data/train.jsonl")
-    reviewed = Path("data/test_reviewed.jsonl")
-    if not train_path.exists() or not reviewed.exists():
+    filtered = resolve_test_set()
+    if not train_path.exists() or not filtered.exists():
         raise SystemExit(
-            "Need data/train.jsonl and data/test_reviewed.jsonl. "
+            "Need data/train.jsonl and data/test_filtered.jsonl. "
             "Generate questions, then run python auto_filter_test.py."
         )
     train_rows = read_jsonl(train_path)
-    test_rows = require_review_actions(read_jsonl(reviewed))
+    test_rows = require_review_actions(read_jsonl(filtered))
     corpus = load_corpus()
     train_chunks = [chunk for chunk in corpus if chunk.get("split") == "train"]
     # Negatives are training chunks. The test set is only for scoring.

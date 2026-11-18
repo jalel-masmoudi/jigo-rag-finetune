@@ -29,7 +29,7 @@ from jigo_rag.jsonl import read_jsonl
 from jigo_rag.metrics import bootstrap_mean_ci, mrr_at_k, paired_bootstrap_diff, recall_at_k
 from jigo_rag.negatives import mine_hard_negatives, select_best, training_columns
 from jigo_rag.retriever import EMBED_MODEL, QUERY_PREFIX, FaissRetriever
-from jigo_rag.schema import require_review_actions
+from jigo_rag.schema import require_review_actions, resolve_test_set
 
 GRID = (
     {"learning_rate": 2e-5, "epochs": 1},
@@ -195,12 +195,12 @@ def main():
 
     train_rows = load_split("train")
     val_rows = load_split("val")
-    reviewed = Path("data/test_reviewed.jsonl")
-    if not reviewed.exists():
-        raise SystemExit("data/test_reviewed.jsonl does not exist. Run python auto_filter_test.py.")
-    test_rows = require_review_actions(read_jsonl(reviewed))
+    filtered = resolve_test_set()
+    if not filtered.exists():
+        raise SystemExit("data/test_filtered.jsonl does not exist. Run python auto_filter_test.py.")
+    test_rows = require_review_actions(read_jsonl(filtered))
     if not test_rows:
-        raise SystemExit("data/test_reviewed.jsonl is empty.")
+        raise SystemExit("data/test_filtered.jsonl is empty.")
     # Negatives come from training chunks only. The test index is separate.
     miner = FaissRetriever().build(train_chunks)
 

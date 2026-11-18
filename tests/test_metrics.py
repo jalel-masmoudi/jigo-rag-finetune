@@ -88,12 +88,12 @@ def test_limit_marks_retrieval_only_and_every_suite_row(tmp_path, monkeypatch):
             "split": "test",
         }
     ]
-    reviewed = [
+    filtered = [
         {"question": "Where?", "answer": "In Concur.", "gold_chunk_id": "a#0"},
         {"question": "When?", "answer": "Before the trip.", "gold_chunk_id": "a#0"},
     ]
     monkeypatch.setattr(ev, "load_corpus", lambda: chunks)
-    monkeypatch.setattr(ev, "load_reviewed_test", lambda: reviewed)
+    monkeypatch.setattr(ev, "load_filtered_test", lambda: filtered)
     monkeypatch.setattr(ev, "_present", lambda path: Path("models/embed"))
 
     class Retriever:

@@ -88,7 +88,7 @@ For the recorded run, generation stalled on free-tier quota and server errors at
 
 ## Test set
 
-The test set is not hand-reviewed. `auto_filter_test.py` reads `data/test.jsonl` and writes the rows that pass to `data/test_reviewed.jsonl`. Dropped rows go to `data/test_dropped.jsonl`. The script does not call an API. It refuses to overwrite an existing `data/test_reviewed.jsonl` unless `--force` is passed, and it prints a count for each drop reason.
+The test set is not hand-reviewed. `auto_filter_test.py` reads `data/test.jsonl` and writes the rows that pass to `data/test_filtered.jsonl`. Dropped rows go to `data/test_dropped.jsonl`. The script does not call an API. It refuses to overwrite an existing `data/test_filtered.jsonl` unless `--force` is passed, and it prints a count for each drop reason.
 
 A row is dropped for the first of these reasons:
 
@@ -103,7 +103,7 @@ Kept rows are marked `review_action` `auto_keep`. Dropped rows are marked `auto_
 
 On the recorded run the filter kept 350 of the 360 test questions: five were dropped as `refers_to_text` and five as `answer_not_in_chunk`.
 
-**Only `data/test_reviewed.jsonl` is the test set.** `data/test.jsonl` is raw model output and must not be used for a score. The filtered file is gitignored, same as the other full generated files, because it is produced on your machine and can be large. `eval.py` reads it from disk. When you want that exact filtered set in git, add it with `git add -f data/test_reviewed.jsonl`. The raw generated files and the cloned corpora are gitignored.
+**Only `data/test_filtered.jsonl` is the test set.** `data/test.jsonl` is raw model output and must not be used for a score. The filtered file is gitignored, same as the other full generated files, because it is produced on your machine and can be large. `eval.py` reads it from disk. When you want that exact filtered set in git, add it with `git add -f data/test_filtered.jsonl`. The raw generated files and the cloned corpora are gitignored.
 
 `review_test.py` can still walk rows one at a time (`k` keep, `f` fix, `d` drop, `q` quit). That is a separate manual pass. It is not how the test set is made. It does not read `auto_keep` or `auto_drop`; it skips a row id that is already in either output file.
 
